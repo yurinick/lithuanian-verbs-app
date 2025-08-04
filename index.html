@@ -103,29 +103,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) { console.log("Not in Telegram environment."); }
 
     // === НОВАЯ ЛОГИКА РАБОТЫ С БАЗОЙ ДАННЫХ ===
-    async function initDatabase() {
-        try {
-            loadingIndicator.textContent = 'Connecting to database...';
-            // Используем cdnjs для стабильности
-            const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
-            const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
+	async function initDatabase() {
+	    try {
+	        loadingIndicator.textContent = 'Connecting to database...';
+	        // Ссылки на CDN остаются
+	        const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
+	        const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
 
-            worker = await createDbWorker(
-                [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 5000 }],
-                workerUrl, wasmUrl
-            );
-            
-            loadingIndicator.textContent = 'Loading initial data...';
-            // Используем id_num, как мы назвали его в Python
-            const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
-            renderTable(initialData);
-        } catch(e) {
-            console.error('Database initialization failed:', e);
-            showError('Failed to initialize database. Please check console for details.');
-        } finally {
-            loadingIndicator.classList.add('hidden');
-        }
-    }
+	        // --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Добавляем window.SqlHttpVFS ---
+	        worker = await window.SqlHttpVFS.createDbWorker(
+	            [{
+	                httpUrl: DB_URL,
+	                serverHttpHeaders: {},
+	                databaseLength: 12000000,
+	                timeout: 5000,
+	            }],
+	            workerUrl,
+	            wasmUrl
+	        );
+        
+	        loadingIndicator.textContent = 'Loading initial data...';
+	        const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+	        renderTable(initialData);
+	    } catch(e) {
+	        console.error('Database initialization failed:', e);
+	        showError('Failed to initialize database. Please check console for details.');
+	    } finally {
+	        loadingIndicator.classList.add('hidden');
+	    }
+	}
 
     // === НОВАЯ ЛОГИКА ПОИСКА ===
     let debounceTimer;
