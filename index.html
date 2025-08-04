@@ -18,7 +18,7 @@
     .dark ::-webkit-scrollbar-thumb { background: #718096; }
   </style>
 
-  <!-- ИСПРАВЛЕННАЯ ССЫЛКА НА БИБЛИОТЕКУ -->
+  <!-- Правильная ссылка -->
   <script src="https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sql-httpvfs.js"></script>
 </head>
 
@@ -78,7 +78,7 @@ window.addEventListener('load', async () => {
     };
     const mainTableHeaders = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
 
-    // ... ссылки на DOM элементы ...
+    // DOM elements
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
@@ -92,7 +92,7 @@ window.addEventListener('load', async () => {
     const modalCloseButton = document.getElementById('modal-close-button');
     const showError = (message) => { errorContainer.textContent = message; errorContainer.classList.remove('hidden'); };
 
-    // ... Telegram ...
+    // Telegram
     try {
         const tg = window.Telegram.WebApp;
         tg.ready();
@@ -103,24 +103,22 @@ window.addEventListener('load', async () => {
         tg.onEvent('mainButtonClicked', () => tg.close());
     } catch (e) { console.log("Not in Telegram environment."); }
 
-    // === ФИНАЛЬНАЯ, РАБОЧАЯ ЛОГИКА ИНИЦИАЛИЗАЦИИ ===
+    
     async function startApp() {
         try {
             loadingIndicator.textContent = 'Connecting to database...';
             
-            // Явно указываем пути ко всем необходимым файлам.
-            // Это самый надежный способ.
+            // *** ИЗМЕНЕНЫ ССЫЛКИ НА ЕДИНООБРАЗНЫЕ ***
             const config = {
                 from: "jsonconfig",
                 config: {
                     serverMode: "full",
                     url: DB_URL,
-                    wasmUrl: "https://unpkg.com/sql.js@1.10.2/dist/sql-wasm.wasm",
-                    workerUrl: "https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js"
+                    wasmUrl: "https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.wasm",
+                    workerUrl: "https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js"
                 }
             };
             
-            // Мы ждем, пока window.SqlHttpVFS станет доступен
             if (!window.SqlHttpVFS) {
                 throw new Error("SqlHttpVFS library is not available.");
             }
@@ -139,7 +137,7 @@ window.addEventListener('load', async () => {
         }
     }
     
-    // ... все остальные функции остаются без изменений ...
+    // ... all other functions
     let debounceTimer;
     searchInput.addEventListener('input', (event) => {
         clearTimeout(debounceTimer);
