@@ -108,13 +108,12 @@ window.addEventListener('load', async () => {
         try {
             loadingIndicator.textContent = 'Connecting to database...';
             
-            // *** ИЗМЕНЕНЫ ССЫЛКИ НА ЕДИНООБРАЗНЫЕ ***
             const config = {
                 from: "jsonconfig",
                 config: {
                     serverMode: "full",
                     url: DB_URL,
-                    wasmUrl: "https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.wasm",
+                    wasmUrl: "https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sql-wasm.wasm",
                     workerUrl: "https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js"
                 }
             };
