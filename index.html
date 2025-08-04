@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Lithuanian Verbs</title>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sql-httpvfs.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
@@ -61,274 +63,193 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
 
-  // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И НАСТРОЙКИ ===
-  let allVerbsData = [];
-  let conjugationsData = {};
-  let mainTableHeaders = [];
-  const CONJUGATIONS_URL = 'https://gist.githubusercontent.com/yurinick/b589a1e7ec06acb884a086b4b79344c9/raw/137225701470d99201fc068b74a23ec657838190/conjugations.json';
-  const TENSE_TRANSLATIONS = {
-      "Present tense": "Настоящее время",
-      "Past tense": "Прошедшее время",
-      "Future tense": "Будущее время",
-      "Conditional mood": "Сослагательное наклонение",
-      "Imperative mood": "Повелительное наклонение",
-      "Past freq. tense": "Прошедшее многократное время"
-  };
+    // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И НАСТРОЙКИ ===
+    let worker;
+    // !!! ОБЯЗАТЕЛЬНО УБЕДИТЕСЬ, ЧТО ЭТО ПРАВИЛЬНЫЙ URL ВАШЕГО РЕПОЗИТОРИЯ !!!
+    const DB_URL = 'https://yurinick.github.io/lithuanian-verbs-app/verbs.sqlite';
+    const TENSE_TRANSLATIONS = {
+        "Present tense": "Настоящее время", "Past tense": "Прошедшее время",
+        "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение",
+        "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время"
+    };
+    // Имена столбцов из нашей новой базы данных
+    const mainTableHeaders = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
 
-  // === ИНТЕГРАЦИЯ С TELEGRAM И ПРОВЕРКА ДОСТУПА ===
-  const ALLOWED_USER_IDS = [123456789]; // <-- ЗАМЕНИТЕ ЭТОТ ID НА ВАШ
+    // === ССЫЛКИ НА ЭЛЕМЕНТЫ DOM ===
+    const searchInput = document.getElementById('searchInput');
+    const tableHead = document.getElementById('table-head');
+    const tableBody = document.getElementById('table-body');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const noResultsMessage = document.getElementById('no-results-message');
+    const errorContainer = document.getElementById('error-container');
+    const recordCount = document.getElementById('record-count');
+    const modalOverlay = document.getElementById('modal-overlay');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const modalCloseButton = document.getElementById('modal-close-button');
+    const showError = (message) => { errorContainer.textContent = message; errorContainer.classList.remove('hidden'); };
 
-  try {
-    const tg = window.Telegram.WebApp;
-    const currentUser = tg.initDataUnsafe?.user;
-    if (currentUser && !ALLOWED_USER_IDS.includes(currentUser.id)) {
-      document.getElementById('main-content').style.display = 'none';
-      document.getElementById('access-denied').classList.remove('hidden');
-      tg.ready();
-    } else {
-      tg.ready();
-      const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
-      tg.onEvent('themeChanged', applyTheme);
-      applyTheme();
-      tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
-      tg.onEvent('mainButtonClicked', () => tg.close());
-    }
-  } catch (e) { console.log("Not in Telegram environment."); }
-
-  // === ССЫЛКИ НА ЭЛЕМЕНТЫ DOM ===
-  const searchInput = document.getElementById('searchInput');
-  const tableHead = document.getElementById('table-head');
-  const tableBody = document.getElementById('table-body');
-  const loadingIndicator = document.getElementById('loading-indicator');
-  const noResultsMessage = document.getElementById('no-results-message');
-  const errorContainer = document.getElementById('error-container');
-  const recordCount = document.getElementById('record-count');
-  const modalOverlay = document.getElementById('modal-overlay');
-  const modalContent = document.getElementById('modal-content');
-  const modalTitle = document.getElementById('modal-title');
-  const modalBody = document.getElementById('modal-body');
-  const modalCloseButton = document.getElementById('modal-close-button');
-
-  // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-  const normalizeForSearch = (str) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const normalizeForMatch = (str) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const showError = (message) => { errorContainer.textContent = message; errorContainer.classList.remove('hidden'); };
-  
-  // Улучшенный парсер для CSV строк, который обрабатывает кавычки
-  const parseCSVLine = (line) => {
-    const result = []; let currentField = ""; let inQuotedField = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        if (inQuotedField && i + 1 < line.length && line[i + 1] === '"') { currentField += '"'; i++; } 
-        else { inQuotedField = !inQuotedField; }
-      } else if (char === ',' && !inQuotedField) { result.push(currentField.trim()); currentField = ""; } 
-      else { currentField += char; }
-    }
-    result.push(currentField.trim()); return result;
-  };
-  
-  // ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ для выбора лучшей формы глагола
-  const getPreferredForm = (formsArray) => {
-    if (!formsArray || formsArray.length === 0) {
-      return '-'; // Возвращаем прочерк, если форм нет
-    }
-    // Ищем первую форму, которая отличается от своей нормализованной версии (т.е. имеет ударение)
-    const formWithDiacritics = formsArray.find(form => form !== normalizeForMatch(form));
-    
-    // Если такая форма найдена - возвращаем её. Если нет - возвращаем самую первую из списка.
-    return formWithDiacritics || formsArray[0];
-  };
-
-  // === ФУНКЦИИ РЕНДЕРИНГА ===
-  const renderTable = (dataToRender) => {
-    tableHead.innerHTML = '';
-    tableBody.innerHTML = '';
-
-    const headerRow = document.createElement('tr');
-    mainTableHeaders.forEach((headerText, index) => {
-      const th = document.createElement('th');
-    
-      // --- ИЗМЕНЕНИЕ 1: Добавляем синий цвет заголовкам ---
-      // Заменили text-gray-* на text-sky-*
-      th.className = 'py-3 text-center text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase tracking-wider';
-
-      // --- ИЗМЕНЕНИЕ 2: Задаем более точную и узкую ширину ---
-      if (index <= 2) { // Для первых трех столбцов (№, P, #)
-        // Используем произвольное значение для точной ширины и еще меньшие отступы
-        th.classList.add('w-[50px]', 'px-1');
-      } else if (headerText === 'Перевод') {
-        th.classList.add('px-4'); 
-      } else {
-        th.classList.add('w-40', 'px-4');
-      }
-
-      th.textContent = headerText;
-      headerRow.appendChild(th);
-    });
-    tableHead.appendChild(headerRow);
-
-    dataToRender.forEach(row => {
-      const tr = document.createElement('tr');
-      const baseClasses = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-50 dark:even:bg-gray-700';
-    
-      const infinitive = row['Инфинитив'];
-      const translation = row['Перевод'] || '';
-	  if (infinitive && conjugationsData[normalizeForMatch(infinitive)]) {
-	      tr.className = `${baseClasses} cursor-pointer`;
-	      tr.addEventListener('click', () => showModalForVerb(infinitive, translation));
-	  } else {
-	      tr.className = baseClasses;
-	  }
-
-      mainTableHeaders.forEach((header, index) => {
-        const td = document.createElement('td');
-        let tdClasses = 'py-2 text-gray-700 dark:text-gray-300 break-words';
-      
-        // Логика отступов, зеркальная заголовкам
-        if (index <= 2) { // Первые три столбца
-          // Уменьшаем отступы и здесь для соответствия
-          tdClasses += ' px-1 text-center'; 
-        } else { // Все остальные
-          tdClasses += ' px-4 text-left'; 
-        }
-      
-        td.className = tdClasses;
-        td.textContent = row[header];
-        tr.appendChild(td);
-      });
-      tableBody.appendChild(tr);
-    });
-
-    noResultsMessage.classList.toggle('hidden', dataToRender.length > 0);
-    recordCount.textContent = dataToRender.length > 0 ? `Showing ${dataToRender.length} of ${allVerbsData.length}` : '';
-  };
-
-  function showModalForVerb(originalInfinitive, translation) {
-      const normalizedKey = normalizeForMatch(originalInfinitive);
-      const verbInfo = conjugationsData[normalizedKey];
-
-      if (!verbInfo) { alert('No additional information available for this verb.'); return; }
-    
-      modalTitle.textContent = `${originalInfinitive.charAt(0).toUpperCase() + originalInfinitive.slice(1)} - ${translation}`;
-      modalBody.innerHTML = '';
-
-      // --- НОВАЯ, ПРОСТАЯ И НАДЕЖНАЯ ЛОГИКА ---
-      // Больше никакой "нарезки". Просто берем данные по ключам.
-      const tenses = {
-          "Present tense": verbInfo["Present tense"],
-          "Past tense": verbInfo["Past tense"],
-          "Future tense": verbInfo["Future tense"],
-          "Conditional mood": verbInfo["Conditional mood"],
-          "Imperative mood": verbInfo["Imperative mood"],
-          "Past freq. tense": verbInfo["Past freq. tense"]
-      };
-
-      const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
-      const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
-      let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
-    
-      tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
-      mainTenses.forEach(tense => {
-          tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`;
-      });
-      tableHTML += `</tr></thead>`;
-    
-      tableHTML += `<tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
-      persons.forEach((person, personIndex) => {
-          tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-600">`;
-          tableHTML += `<td class="px-2 py-1 font-semibold">${person}</td>`;
-          mainTenses.forEach(tense => {
-              // Проверяем, что массив для этого времени существует, перед тем как брать из него элемент
-              const tenseData = tenses[tense];
-              const item = tenseData ? tenseData[personIndex] : null;
-            
-              const form = item ? getPreferredForm(item.forms) : '-';
-              const trans = item ? item.translation : '';
-              tableHTML += `<td class="px-2 py-1" title="${trans}">${form}</td>`;
-          });
-          tableHTML += `</tr>`;
-      });
-      tableHTML += `</tbody></table></div>`;
-      modalBody.innerHTML = tableHTML;
-    
-      ["Imperative mood", "Past freq. tense"].forEach(tense => {
-          // Проверяем, что для этих времен есть данные
-          if (tenses[tense] && tenses[tense].length > 0) {
-              let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
-              tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
-              tenses[tense].forEach(row => {
-                  const preferredForm = getPreferredForm(row.forms);
-                  tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-600"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${preferredForm}</td></tr>`;
-              });
-              tenseHTML += `</tbody></table>`;
-              modalBody.innerHTML += tenseHTML;
-          }
-      });
-
-      modalOverlay.classList.remove('hidden');
-  }
-
-  function closeModal() { modalOverlay.classList.add('hidden'); }
-
-  // === ЗАГРУЗКА ДАННЫХ ===
-  async function loadData() {
+    // === ИНТЕГРАЦИЯ С TELEGRAM (без изменений) ===
     try {
-      const [csvResponse, jsonResponse] = await Promise.all([ fetch('verbs.csv'), fetch(CONJUGATIONS_URL) ]);
-      if (!csvResponse.ok) throw new Error('Could not load verbs.csv');
-      if (!jsonResponse.ok) throw new Error('Could not load conjugations.json from Gist');
-      
-      const csvText = await csvResponse.text();
-      const lines = csvText.trim().split('\n').filter(Boolean);
-      
-      // Пункт 1: Читаем все заголовки из первой строки
-      mainTableHeaders = parseCSVLine(lines[0]);
-      
-      // Пункт 3: Используем улучшенный парсер для всех строк
-      allVerbsData = lines.slice(1).map(line => {
-        const values = parseCSVLine(line);
-        const row = {};
-        mainTableHeaders.forEach((header, index) => { row[header] = values[index] || ''; });
-        return row;
-      });
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
+        tg.onEvent('themeChanged', applyTheme);
+        applyTheme();
+        tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
+        tg.onEvent('mainButtonClicked', () => tg.close());
+    } catch (e) { console.log("Not in Telegram environment."); }
 
-      const rawConjugations = await jsonResponse.json();
-      conjugationsData = {}; 
-      for (const key in rawConjugations) {
-          const normalizedKey = normalizeForMatch(key);
-          conjugationsData[normalizedKey] = rawConjugations[key];
-      }
+    // === НОВАЯ ЛОГИКА РАБОТЫ С БАЗОЙ ДАННЫХ ===
+    async function initDatabase() {
+        try {
+            loadingIndicator.textContent = 'Connecting to database...';
+            // Используем cdnjs для стабильности
+            const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
+            const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
 
-      renderTable(allVerbsData);
-    } catch (error) {
-      console.error('Failed to load data:', error);
-      showError(error.message);
-    } finally {
-      loadingIndicator.classList.add('hidden');
+            worker = await createDbWorker(
+                [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 5000 }],
+                workerUrl, wasmUrl
+            );
+            
+            loadingIndicator.textContent = 'Loading initial data...';
+            // Используем id_num, как мы назвали его в Python
+            const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+            renderTable(initialData);
+        } catch(e) {
+            console.error('Database initialization failed:', e);
+            showError('Failed to initialize database. Please check console for details.');
+        } finally {
+            loadingIndicator.classList.add('hidden');
+        }
     }
-  }
 
-  // === ОБРАБОТЧИКИ СОБЫТИЙ ===
-  searchInput.addEventListener('input', (event) => {
-    const searchTerm = event.target.value.trim();
-    if (!searchTerm) { renderTable(allVerbsData); return; }
-    const normalizedSearchTerm = normalizeForSearch(searchTerm);
-    const filteredData = allVerbsData.filter(row => 
-        Object.values(row).some(cell => 
-            normalizeForSearch(String(cell)).includes(normalizedSearchTerm)
-        )
-    );
-    renderTable(filteredData);
-  });
+    // === НОВАЯ ЛОГИКА ПОИСКА ===
+    let debounceTimer;
+    searchInput.addEventListener('input', (event) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => {
+            const searchTerm = event.target.value.trim();
+            if (!searchTerm) {
+                const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+                renderTable(initialData);
+                return;
+            }
+            const searchQuery = searchTerm.split(' ').filter(Boolean).map(word => `${word}*`).join(' ');
+            const results = await worker.db.query(
+                `SELECT v.* FROM verbs_fts fts JOIN verbs v ON fts.rowid = v.rowid WHERE fts.verbs_fts MATCH ? ORDER BY rank`, 
+                [searchQuery]
+            );
+            renderTable(results);
+        }, 300);
+    });
 
-  modalCloseButton.addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+    // === ФУНКЦИИ РЕНДЕРИНГА (адаптированы под новые данные) ===
+    function renderTable(dataToRender) {
+        tableHead.innerHTML = '';
+        tableBody.innerHTML = '';
 
-  // === НАЧАЛЬНЫЙ ЗАПУСК ===
-  loadData();
+        const headerRow = document.createElement('tr');
+        mainTableHeaders.forEach((headerText) => {
+            const th = document.createElement('th');
+            th.className = 'py-3 text-center text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase tracking-wider';
+            // Простое присвоение имени, без сложной логики
+            th.classList.add('px-2');
+            th.textContent = headerText.replace('_', ' ').replace('val', ''); // Делаем заголовки красивее
+            headerRow.appendChild(th);
+        });
+        tableHead.appendChild(headerRow);
+
+        dataToRender.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-50 dark:even:bg-gray-700';
+
+            // Если есть спряжения, делаем строку кликабельной
+            if (row.conjugations) {
+                tr.classList.add('cursor-pointer');
+                tr.addEventListener('click', () => showModalForVerb(row));
+            }
+            
+            mainTableHeaders.forEach(headerKey => {
+                const td = document.createElement('td');
+                td.className = 'px-2 py-2 text-center text-gray-700 dark:text-gray-300 break-words';
+                if (headerKey.includes('infinitive') || headerKey.includes('translation')) {
+                    td.classList.add('text-left'); // Длинные тексты выравниваем по левому краю
+                }
+                td.textContent = row[headerKey] || '';
+                tr.appendChild(td);
+            });
+            tableBody.appendChild(tr);
+        });
+        
+        noResultsMessage.classList.toggle('hidden', dataToRender.length === 0);
+        recordCount.textContent = `Showing ${dataToRender.length} results.`;
+    }
+
+    const normalizeForMatch = (str) => str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : '';
+    const getPreferredForm = (formsArray) => {
+        if (!formsArray || formsArray.length === 0) return '-';
+        const formWithDiacritics = formsArray.find(form => form !== normalizeForMatch(form));
+        return formWithDiacritics || formsArray[0];
+    };
+
+    function showModalForVerb(rowData) {
+        const verbInfo = JSON.parse(rowData.conjugations || '{}');
+        modalTitle.textContent = `${rowData.infinitive} - ${rowData.translation}`;
+        modalBody.innerHTML = '';
+
+        const tenses = {
+            "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"],
+            "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"],
+            "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"]
+        };
+        
+        const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
+        const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
+        let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
+        tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
+        mainTenses.forEach(tense => {
+            tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`;
+        });
+        tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+        persons.forEach((person, personIndex) => {
+            tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-600">`;
+            tableHTML += `<td class="px-2 py-1 font-semibold">${person}</td>`;
+            mainTenses.forEach(tense => {
+                const tenseData = tenses[tense];
+                const item = tenseData && tenseData[personIndex] ? tenseData[personIndex] : null;
+                const form = item ? getPreferredForm(item.forms) : '-';
+                tableHTML += `<td class="px-2 py-1">${form}</td>`;
+            });
+            tableHTML += `</tr>`;
+        });
+        tableHTML += `</tbody></table></div>`;
+        modalBody.innerHTML = tableHTML;
+        
+        ["Imperative mood", "Past freq. tense"].forEach(tense => {
+            if (tenses[tense] && tenses[tense].length > 0) {
+                let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
+                tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+                tenses[tense].forEach(row => {
+                    tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-600"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`;
+                });
+                tenseHTML += `</tbody></table>`;
+                modalBody.innerHTML += tenseHTML;
+            }
+        });
+        modalOverlay.classList.remove('hidden');
+    }
+
+    function closeModal() { modalOverlay.classList.add('hidden'); }
+    modalCloseButton.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+
+    // === НАЧАЛЬНЫЙ ЗАПУСК ===
+    initDatabase();
 });
 </script>
 </body>
