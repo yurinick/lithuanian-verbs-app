@@ -21,7 +21,7 @@
   <!-- Правильная ссылка -->
   <script src="js/sqlite.worker.js"></script>
   <script type="module">
-    import { createDbWorker } from "js/vfs-http-worker.js";
+    import { createDbWorker } from "./js/vfs-http-worker.js";
 
     window.addEventListener('load', async () => {
     
@@ -72,8 +72,8 @@
                         name: "verbs.sqlite"
                     }
                 ],
-                "/js/sqlite.worker.js",
-                "/js/sql-wasm.wasm"
+                new URL("./js/sqlite.worker.js", import.meta.url).toString(),
+                new URL("./js/sql-wasm.wasm", import.meta.url).toString()
             );
 
             loadingIndicator.textContent = 'Loading initial data...';
