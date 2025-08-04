@@ -1,4 +1,4 @@
-import { createSQLiteHTTPPool } from "./node_modules/sqlite-wasm-http/dist/index.js";
+import { createSQLiteHTTPPool } from "sqlite-wasm-http";
 
 window.addEventListener('load', async () => {
     
@@ -44,8 +44,8 @@ window.addEventListener('load', async () => {
             pool = await createSQLiteHTTPPool({
                 httpOptions: {
                     url: DB_URL,
-                    workerUrl: new URL("./js/sqlite.worker.js", import.meta.url).toString(),
-                    wasmUrl: new URL("./js/sql-wasm.wasm", import.meta.url).toString()
+                    workerUrl: new URL("./sqlite.worker.js", import.meta.url).toString(),
+                    wasmUrl: new URL("./sql-wasm.wasm", import.meta.url).toString()
                 }
             });
 
@@ -173,7 +173,4 @@ window.addEventListener('load', async () => {
 
     startApp();
 });
-</script>
 
-</body>
-</html>
