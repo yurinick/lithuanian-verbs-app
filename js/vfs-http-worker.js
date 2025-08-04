@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import LRUCache from 'lru-cache';
+import LRUCache from './lru-cache.min.js';
 import * as VFSHTTP from './vfs-http-types.js';
 import { ntoh16 } from './endianness.js';
 import { debug } from './vfs-http-types.js';
