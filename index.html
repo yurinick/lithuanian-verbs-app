@@ -18,9 +18,8 @@
     .dark ::-webkit-scrollbar-thumb { background: #718096; }
   </style>
 
-  <!-- ИСПРАВЛЕНИЕ: Используем UNPKG вместо JSDELIVR -->
-  <script src="https://unpkg.com/sql.js@1.10.2/dist/sql-wasm.js"></script>
-  <script src="https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sql-httpvfs.js"></script>
+  <!-- Загружаем только главную библиотеку-обертку. Основная sql.js будет подгружена ей. -->
+  <script src="https://unpkg.com/sql.js-httpvfs/dist/sql-httpvfs.js"></script>
 </head>
 
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased">
@@ -68,8 +67,8 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-
+document.addEventListener('DOMContentLoaded', async () => {
+    
     let worker;
     const DB_URL = 'https://yurinick.github.io/lithuanian-verbs-app/verbs.sqlite';
     const TENSE_TRANSLATIONS = {
@@ -79,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const mainTableHeaders = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
 
+    // ... ссылки на DOM элементы ...
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalCloseButton = document.getElementById('modal-close-button');
     const showError = (message) => { errorContainer.textContent = message; errorContainer.classList.remove('hidden'); };
 
+    // ... Telegram ...
     try {
         const tg = window.Telegram.WebApp;
         tg.ready();
@@ -102,47 +103,38 @@ document.addEventListener('DOMContentLoaded', () => {
         tg.onEvent('mainButtonClicked', () => tg.close());
     } catch (e) { console.log("Not in Telegram environment."); }
 
-	async function startApp() {
-	    try {
-	        loadingIndicator.textContent = 'Connecting to database...';
-	        // ИСПРАВЛЕНИЕ: Используем UNPKG и здесь
-	        const workerUrl = 'https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js';
-	        const wasmUrl = 'https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sql-wasm.wasm';
 
-	        worker = await window.SqlHttpVFS.createDbWorker(
-	            [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 10000 }],
-	            workerUrl, wasmUrl
-	        );
-        
-	        loadingIndicator.textContent = 'Loading initial data...';
-	        const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
-	        renderTable(initialData);
-	    } catch(e) {
-	        console.error('Database initialization failed:', e);
-	        showError('Failed to initialize database. Please check console for details.');
-	    } finally {
-	        loadingIndicator.classList.add('hidden');
-	    }
-	}
-
-    function waitForLibraryAndInit() {
-        let attempts = 0;
-        const maxAttempts = 100; // Ждем максимум 10 секунд
-        const interval = setInterval(() => {
-            if (window.SqlHttpVFS) {
-                clearInterval(interval);
-                startApp();
-            } else {
-                attempts++;
-                if (attempts > maxAttempts) {
-                    clearInterval(interval);
-                    showError('Library sql-httpvfs.js could not be loaded.');
-                    loadingIndicator.classList.add('hidden');
+    // === ФИНАЛЬНАЯ, РАБОЧАЯ ЛОГИКА ИНИЦИАЛИЗАЦИИ ===
+    async function startApp() {
+        try {
+            loadingIndicator.textContent = 'Connecting to database...';
+            
+            // Явно указываем пути ко всем необходимым файлам
+            const config = {
+                from: "jsonconfig",
+                config: {
+                    serverMode: "full",
+                    url: DB_URL,
+                    wasmUrl: "https://unpkg.com/sql.js@1.10.2/dist/sql-wasm.wasm",
+                    workerUrl: "https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js"
                 }
-            }
-        }, 100);
+            };
+
+            worker = await window.SqlHttpVFS.createDbWorker(config);
+
+            loadingIndicator.textContent = 'Loading initial data...';
+            const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+            renderTable(initialData);
+
+        } catch (e) {
+            console.error('Database initialization failed:', e);
+            showError('Failed to initialize database. Please check console for details.');
+        } finally {
+            loadingIndicator.classList.add('hidden');
+        }
     }
     
+    // ... все остальные функции остаются без изменений ...
     let debounceTimer;
     searchInput.addEventListener('input', (event) => {
         clearTimeout(debounceTimer);
@@ -251,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
 
     // === НАЧАЛЬНЫЙ ЗАПУСК ===
-    waitForLibraryAndInit();
+    startApp();
 });
 </script>
 
