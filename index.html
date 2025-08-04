@@ -18,7 +18,7 @@
     .dark ::-webkit-scrollbar-thumb { background: #718096; }
   </style>
 
-  <!-- Загружаем только главную библиотеку-обертку. Основная sql.js будет подгружена ей. -->
+  <!-- Загружаем только главную библиотеку-обертку. -->
   <script src="https://unpkg.com/sql.js-httpvfs/dist/sql-httpvfs.js"></script>
 </head>
 
@@ -103,13 +103,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         tg.onEvent('mainButtonClicked', () => tg.close());
     } catch (e) { console.log("Not in Telegram environment."); }
 
-
     // === ФИНАЛЬНАЯ, РАБОЧАЯ ЛОГИКА ИНИЦИАЛИЗАЦИИ ===
     async function startApp() {
         try {
             loadingIndicator.textContent = 'Connecting to database...';
             
-            // Явно указываем пути ко всем необходимым файлам
+            // Явно указываем пути ко всем необходимым файлам.
+            // Это самый надежный способ.
             const config = {
                 from: "jsonconfig",
                 config: {
@@ -119,6 +119,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     workerUrl: "https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js"
                 }
             };
+            
+            // Мы ждем, пока window.SqlHttpVFS станет доступен
+            if (!window.SqlHttpVFS) {
+                throw new Error("SqlHttpVFS library is not available.");
+            }
 
             worker = await window.SqlHttpVFS.createDbWorker(config);
 
@@ -242,7 +247,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
 
-    // === НАЧАЛЬНЫЙ ЗАПУСК ===
     startApp();
 });
 </script>
