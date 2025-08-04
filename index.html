@@ -1,22 +1,249 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Lithuanian Verbs</title>
-  
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body { font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s; }
     #main-content { height: 100vh; display: flex; flex-direction: column; }
-    #table-wrapper { flex-grow: 1; overflow-y: auto; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f1f1f1; }
     ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
     .dark ::-webkit-scrollbar-track { background: #2d3748; }
     .dark ::-webkit-scrollbar-thumb { background: #718096; }
   </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased">
 
-  <!-- Правильная ссылка -->
-  <script type="module" src="js/bundle.js"></script>
+<div id="main-content" class="mx-auto max-w-7xl flex flex-col h-screen">
+  <header class="p-4 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+    <h1 class="text-xl sm:text-2xl font-bold text-sky-700 dark:text-sky-300 text-center">
+      Lithuanian Verbs Search
+    </h1>
+    <div class="mt-4 relative">
+      <input type="text" id="searchInput" placeholder="Загрузка базы..." disabled class="w-full p-3 pl-10 text-base border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 transition-all" />
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+    </div>
+  </header>
+
+  <div class="p-4 flex-grow flex flex-col overflow-hidden">
+    <div id="table-wrapper" class="overflow-y-auto flex-grow bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <table class="min-w-full text-sm">
+            <thead id="table-head" class="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10"></thead>
+            <tbody id="table-body"></tbody>
+        </table>
+        <div id="no-results-message" class="hidden text-center p-8 text-gray-500">Ничего не найдено</div>
+    </div>
+    <p id="record-count" class="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center flex-shrink-0"></p>
+  </div>
+</div>
+
+<div id="modal-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div id="modal-content" class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 id="modal-title" class="text-xl font-semibold text-gray-800 dark:text-gray-200"></h2>
+            <button id="modal-close-button" class="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-3xl leading-none">×</button>
+        </div>
+        <div id="modal-body" class="p-4 overflow-y-auto"></div>
+    </div>
+</div>
+
+<script src="./sql-wasm.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let db;
+    let totalVerbsCount = 0;
+
+    const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
+
+    const searchInput = document.getElementById('searchInput');
+    const tableHead = document.getElementById('table-head');
+    const tableBody = document.getElementById('table-body');
+    const noResultsMessage = document.getElementById('no-results-message');
+    const recordCount = document.getElementById('record-count');
+    const modalOverlay = document.getElementById('modal-overlay');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const modalCloseButton = document.getElementById('modal-close-button');
+
+    try {
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
+        tg.onEvent('themeChanged', applyTheme);
+        applyTheme();
+        tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
+        tg.onEvent('mainButtonClicked', () => tg.close());
+    } catch (e) { console.log("Not in Telegram environment."); }
+
+    const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
+    const normalizeForMatch = (s) => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
+    const getPreferredForm = (formsArray) => {
+        if (!formsArray || formsArray.length === 0) return '-';
+        const formWithDiacritics = formsArray.find(form => form !== normalizeForMatch(form));
+        return formWithDiacritics || formsArray[0];
+    };
+
+    function renderTable(verbs) {
+        const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод'];
+        const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
+
+        let headerHTML = '<tr>';
+        headers.forEach((h, i) => {
+            let classes = 'py-3 px-4 text-left text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase';
+            if (['№', 'P', '#'].includes(h)) classes += ' w-[50px] text-center px-1';
+            headerHTML += `<th class="${classes}">${h}</th>`;
+        });
+        headerHTML += '</tr>';
+        tableHead.innerHTML = headerHTML;
+        
+        tableBody.innerHTML = '';
+        
+        verbs.forEach(verb => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-50 dark:even:bg-gray-800/50';
+            
+            if (verb.conjugations) {
+                tr.classList.add('cursor-pointer');
+                tr.addEventListener('click', () => showModalForVerb(verb));
+            }
+            
+            let rowHTML = '';
+            db_keys.forEach(key => {
+                let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300';
+                 if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400';
+                 else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
+                rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`;
+            });
+            tr.innerHTML = rowHTML;
+            tableBody.appendChild(tr);
+        });
+
+        noResultsMessage.classList.toggle('hidden', verbs.length > 0);
+        recordCount.textContent = `Showing ${verbs.length} of ${totalVerbsCount} verbs`;
+    }
+    
+    function showModalForVerb(verb) {
+        if (!verb.conjugations) return;
+        const verbInfo = JSON.parse(verb.conjugations);
+        modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`;
+        modalBody.innerHTML = '';
+        const tenses = { "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"], "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"], "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"] };
+        const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
+        const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
+        let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
+        tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
+        mainTenses.forEach(tense => { tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`; });
+        tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+        persons.forEach((person, personIndex) => {
+            tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`;
+            mainTenses.forEach(tense => {
+                const item = tenses[tense] ? tenses[tense][personIndex] : null;
+                const form = item ? getPreferredForm(item.forms) : '-';
+                const trans = item ? item.translation : '';
+                tableHTML += `<td class="px-2 py-1" title="${trans}">${form}</td>`;
+            });
+            tableHTML += `</tr>`;
+        });
+        tableHTML += `</tbody></table></div>`;
+        modalBody.innerHTML = tableHTML;
+        ["Imperative mood", "Past freq. tense"].forEach(tense => {
+            if (tenses[tense] && tenses[tense].length > 0) {
+                let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
+                tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+                tenses[tense].forEach(row => {
+                    const preferredForm = getPreferredForm(row.forms);
+                    tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${preferredForm}</td></tr>`;
+                });
+                tenseHTML += `</tbody></table>`;
+                modalBody.innerHTML += tenseHTML;
+            }
+        });
+        modalOverlay.classList.remove('hidden');
+    }
+
+    function closeModal() { modalOverlay.classList.add('hidden'); }
+
+    // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ ПОИСКА ---
+    function searchOrDisplayAll(searchTerm = "") {
+    if (!db) return;
+    
+    let stmt;
+    const trimmedTerm = searchTerm.trim();
+
+    // ПРОВЕРКА: если введенный текст - это число?
+    if (trimmedTerm && !isNaN(trimmedTerm)) {
+        // Да, это число. Ищем по точному совпадению в числовых колонках.
+        stmt = db.prepare(`
+            SELECT * FROM verbs 
+            WHERE id_num = :term 
+               OR p_val = :term
+               OR hash_val = :term
+            LIMIT 100 
+        `);
+        stmt.bind({ ':term': Number(trimmedTerm) }); // Преобразуем в число для точного поиска
+    } 
+    // Если это текст (или поле пустое)
+    else {
+        const normalizedTerm = normalizeForSearch(trimmedTerm);
+        if (normalizedTerm) {
+            // Ищем по части строки в текстовых колонках
+            stmt = db.prepare(`
+                SELECT * FROM verbs 
+                WHERE infinitive_norm LIKE :term 
+                   OR translation_norm LIKE :term
+                   OR present_3rd_norm LIKE :term
+                   OR past_3rd_norm LIKE :term
+                   OR question_norm LIKE :term
+                LIMIT 100 
+            `);
+            stmt.bind({ ':term': `%${normalizedTerm}%` });
+        } else {
+            // Если поле пустое, показываем начальный список
+            stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT 100");
+        }
+    }
+
+    const results = [];
+    while(stmt.step()) { results.push(stmt.getAsObject()); }
+    stmt.free();
+    renderTable(results);
+}
+
+    async function main() {
+        try {
+            const SQL = await initSqlJs({ locateFile: file => `./${file}` });
+            const response = await fetch("./verbs.sqlite");
+            const dbFile = await response.arrayBuffer();
+            db = new SQL.Database(new Uint8Array(dbFile));
+            const countResult = db.exec("SELECT COUNT(*) FROM verbs");
+            totalVerbsCount = countResult[0].values[0][0];
+
+            searchInput.disabled = false;
+            searchInput.placeholder = "Search any form...";
+            
+            searchOrDisplayAll();
+
+            let debounceTimer;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => searchOrDisplayAll(e.target.value), 200);
+            });
+            
+            modalCloseButton.addEventListener('click', closeModal);
+            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+
+        } catch (err) {
+            console.error("Initialization error:", err);
+            searchInput.placeholder = "Error loading database!";
+        }
+    }
+    main();
+});
+</script>
+</body>
+</html>
