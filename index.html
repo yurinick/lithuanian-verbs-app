@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Lithuanian Verbs</title>
   
-  <!-- Стили и второстепенные скрипты -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
@@ -19,20 +18,20 @@
     .dark ::-webkit-scrollbar-thumb { background: #718096; }
   </style>
 
-  <!-- Ключевые библиотеки для работы с базой данных. Они должны загрузиться до основного кода. -->
+  <!-- Загружаем библиотеки -->
   <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sql-httpvfs.js"></script>
 
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased">
 
+<!-- ... ваша HTML-разметка ... -->
 <div id="access-denied" class="hidden fixed inset-0 bg-gray-100 dark:bg-gray-900 flex items-center justify-center z-50 text-center p-4">
     <div>
         <p class="text-2xl font-bold text-red-600 dark:text-red-500">Access Denied</p>
         <p class="mt-2 text-gray-600 dark:text-gray-400">You do not have permission to use this application.</p>
     </div>
 </div>
-
 <div id="main-content" class="mx-auto max-w-7xl flex flex-col h-screen">
   <header class="p-4 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
     <h1 class="text-xl sm:text-2xl font-bold text-sky-700 dark:text-sky-300 text-center">
@@ -44,7 +43,6 @@
     </div>
      <div id="error-container" class="mt-2 p-2 bg-red-100 dark:bg-red-800 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-200 rounded-md text-sm hidden"></div>
   </header>
-
   <div class="p-4 flex-grow flex flex-col overflow-hidden">
     <div id="table-wrapper" class="overflow-x-auto overflow-y-auto flex-grow bg-white dark:bg-gray-800 rounded-lg shadow-md">
         <div id="loading-indicator" class="text-center py-4 text-gray-600 dark:text-gray-400">Loading...</div>
@@ -59,7 +57,6 @@
     <p id="record-count" class="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center flex-shrink-0"></p>
   </div>
 </div>
-
 <div id="modal-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
     <div id="modal-content" class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
@@ -69,10 +66,10 @@
         <div id="modal-body" class="p-4 overflow-y-auto"></div>
     </div>
 </div>
+<!-- /конец HTML-разметки -->
 
 <script>
-// Этот скрипт начнет выполняться после того, как все скрипты в <head> будут загружены
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
 
     let worker;
     const DB_URL = 'https://yurinick.github.io/lithuanian-verbs-app/verbs.sqlite';
@@ -106,14 +103,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         tg.onEvent('mainButtonClicked', () => tg.close());
     } catch (e) { console.log("Not in Telegram environment."); }
 
-    async function initDatabase() {
+    async function startApp() {
         try {
             loadingIndicator.textContent = 'Connecting to database...';
             const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
             const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
 
             worker = await window.SqlHttpVFS.createDbWorker(
-                [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 5000 }],
+                [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 10000 }],
                 workerUrl, wasmUrl
             );
             
@@ -128,15 +125,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // --- ФУНКЦИЯ-ОЖИДАЛКА ---
+    function waitForLibraryAndInit() {
+        let attempts = 0;
+        const maxAttempts = 100; // Ждем максимум 10 секунд
+        const interval = setInterval(() => {
+            if (window.SqlHttpVFS) {
+                clearInterval(interval);
+                startApp(); // Библиотека готова, запускаем приложение
+            } else {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(interval);
+                    showError('Library sql-httpvfs.js could not be loaded.');
+                }
+            }
+        }, 100);
+    }
+    
+    // Остальные функции без изменений...
     let debounceTimer;
     searchInput.addEventListener('input', (event) => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(async () => {
+            if (!worker) return;
             const searchTerm = event.target.value.trim();
             if (!searchTerm) {
                 const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
-                renderTable(initialData);
-                return;
+                renderTable(initialData); return;
             }
             const searchQuery = searchTerm.split(' ').filter(Boolean).map(word => `${word}*`).join(' ');
             const results = await worker.db.query(
@@ -148,11 +164,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     function renderTable(dataToRender) {
-        tableHead.innerHTML = '';
-        tableBody.innerHTML = '';
-
+        tableHead.innerHTML = ''; tableBody.innerHTML = '';
         const headerRow = document.createElement('tr');
-        // Используем реальные заголовки из вашего CSV для отображения
         const displayHeaders = ['№', 'P', '#', 'Инфинитив', '3 л. наст. вр.', '3 л. прош. вр.', 'Вопрос', 'Перевод'];
         displayHeaders.forEach((headerText) => {
             const th = document.createElement('th');
@@ -161,16 +174,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             headerRow.appendChild(th);
         });
         tableHead.appendChild(headerRow);
-
         dataToRender.forEach(row => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-50 dark:even:bg-gray-700';
-
             if (row.conjugations) {
                 tr.classList.add('cursor-pointer');
                 tr.addEventListener('click', () => showModalForVerb(row));
             }
-            
             mainTableHeaders.forEach(headerKey => {
                 const td = document.createElement('td');
                 td.className = 'px-2 py-2 text-center text-gray-700 dark:text-gray-300 break-words';
@@ -182,7 +192,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             tableBody.appendChild(tr);
         });
-        
         noResultsMessage.classList.toggle('hidden', dataToRender.length === 0);
         recordCount.textContent = `Showing ${dataToRender.length} results.`;
     }
@@ -198,13 +207,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const verbInfo = JSON.parse(rowData.conjugations || '{}');
         modalTitle.textContent = `${rowData.infinitive} - ${rowData.translation}`;
         modalBody.innerHTML = '';
-
         const tenses = {
             "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"],
             "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"],
             "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"]
         };
-        
         const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
         const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
         let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
@@ -226,7 +233,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         tableHTML += `</tbody></table></div>`;
         modalBody.innerHTML = tableHTML;
-        
         ["Imperative mood", "Past freq. tense"].forEach(tense => {
             if (tenses[tense] && tenses[tense].length > 0) {
                 let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
@@ -246,7 +252,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
 
-    initDatabase();
+    // === НАЧАЛЬНЫЙ ЗАПУСК ===
+    waitForLibraryAndInit();
 });
 </script>
 
