@@ -56,14 +56,11 @@
 document.addEventListener('DOMContentLoaded', () => {
     let db;
     let totalVerbsCount = 0;
-    
-    // --- НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ БЕСКОНЕЧНОЙ ПРОКРУТКИ ---
-    const PAGE_SIZE = 100; // Сколько строк загружать за раз
-    let currentOffset = 0; // Сколько строк уже загружено
-    let isLoading = false; // Флаг, чтобы не загружать несколько раз одновременно
-    let currentSearchTerm = ""; // Храним текущий поисковый запрос
+    const PAGE_SIZE = 100;
+    let currentOffset = 0;
+    let isLoading = false;
+    let currentSearchTerm = "";
 
-    // ... (ссылки на DOM-элементы и другие переменные без изменений) ...
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
@@ -94,13 +91,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return formWithDiacritics || formsArray[0];
     };
 
-    // --- ИЗМЕНЕНИЕ: Функция рендеринга теперь может ДОБАВЛЯТЬ строки, а не только заменять ---
     function renderTable(verbs, append = false) {
         if (!append) {
             const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод'];
-            const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
             let headerHTML = '<tr>';
-            headers.forEach((h, i) => {
+            headers.forEach(h => {
                 let classes = 'py-3 px-4 text-left text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase';
                 if (['№', 'P', '#'].includes(h)) classes += ' w-[50px] text-center px-1';
                 headerHTML += `<th class="${classes}">${h}</th>`;
@@ -112,7 +107,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         verbs.forEach(verb => {
             const tr = document.createElement('tr');
-            tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-800';
+            // --- ИСПРАВЛЕНИЕ №2: Возвращаем более контрастную "зебру" для темной темы ---
+            tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
+            
             if (verb.conjugations) {
                 tr.classList.add('cursor-pointer');
                 tr.addEventListener('click', () => showModalForVerb(verb));
@@ -126,28 +123,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`;
             });
             tr.innerHTML = rowHTML;
-            tableBody.appendChild(tr); // Используем appendChild для добавления
+            tableBody.appendChild(tr);
         });
-
-        noResultsMessage.classList.toggle('hidden', tableBody.children.length > 0);
+        noResultsMessage.classList.toggle('hidden', tableBody.children.length === 0);
         recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
     
-    function showModalForVerb(verb) { /* ... (этот код без изменений) ... */ }
+    // --- ИСПРАВЛЕНИЕ №1: ПОЛНАЯ, РАБОЧАЯ ВЕРСИЯ ФУНКЦИИ ---
+    function showModalForVerb(verb) {
+        if (!verb.conjugations) return;
+        const verbInfo = JSON.parse(verb.conjugations);
+        modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`;
+        modalBody.innerHTML = '';
+        const tenses = { "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"], "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"], "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"] };
+        const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
+        const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
+        let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
+        tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
+        mainTenses.forEach(tense => { tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`; });
+        tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+        persons.forEach((person, personIndex) => {
+            tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`;
+            mainTenses.forEach(tense => {
+                const item = tenses[tense] ? tenses[tense][personIndex] : null;
+                const form = item ? getPreferredForm(item.forms) : '-';
+                const trans = item ? item.translation : '';
+                tableHTML += `<td class="px-2 py-1" title="${trans}">${form}</td>`;
+            });
+            tableHTML += `</tr>`;
+        });
+        tableHTML += `</tbody></table></div>`;
+        modalBody.innerHTML = tableHTML;
+        ["Imperative mood", "Past freq. tense"].forEach(tense => {
+            if (tenses[tense] && tenses[tense].length > 0) {
+                let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
+                tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+                tenses[tense].forEach(row => {
+                    const preferredForm = getPreferredForm(row.forms);
+                    tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${preferredForm}</td></tr>`;
+                });
+                tenseHTML += `</tbody></table>`;
+                modalBody.innerHTML += tenseHTML;
+            }
+        });
+        modalOverlay.classList.remove('hidden');
+    }
+
     function closeModal() { modalOverlay.classList.add('hidden'); }
 
-    // --- НОВАЯ ГЛАВНАЯ ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ И ПОИСКА ---
     async function loadMoreVerbs(isNewSearch = false) {
-        if (!db || isLoading) return; // Если уже загружаем, ничего не делаем
+        if (!db || isLoading) return;
         isLoading = true;
-
-        if (isNewSearch) {
-            currentOffset = 0; // Для нового поиска начинаем с самого начала
-        }
-        
+        if (isNewSearch) currentOffset = 0;
         let stmt;
         const normalizedTerm = normalizeForSearch(currentSearchTerm);
-        
         if (normalizedTerm) {
             stmt = db.prepare(`
                 SELECT * FROM verbs 
@@ -159,55 +188,41 @@ document.addEventListener('DOMContentLoaded', () => {
             stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
             stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
         }
-
         const results = [];
         while(stmt.step()) { results.push(stmt.getAsObject()); }
         stmt.free();
-        
-        // Если это новый поиск - заменяем таблицу. Если догрузка - добавляем в конец.
         renderTable(results, !isNewSearch);
-        
-        currentOffset += results.length; // Увеличиваем счетчик загруженных строк
+        currentOffset += results.length;
         isLoading = false;
     }
 
-    // --- ГЛАВНАЯ ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ ---
     async function main() {
         try {
             const SQL = await initSqlJs({ locateFile: file => `./${file}` });
             const response = await fetch("./verbs.sqlite");
             const dbFile = await response.arrayBuffer();
             db = new SQL.Database(new Uint8Array(dbFile));
-            
             const countResult = db.exec("SELECT COUNT(*) FROM verbs");
             totalVerbsCount = countResult[0].values[0][0];
-
             searchInput.disabled = false;
             searchInput.placeholder = "Search any form...";
-            
-            await loadMoreVerbs(true); // Загружаем первую "страницу"
-
+            await loadMoreVerbs(true);
             let debounceTimer;
             searchInput.addEventListener('input', (e) => {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(() => {
                     currentSearchTerm = e.target.value;
-                    loadMoreVerbs(true); // Любое изменение в поиске - это новый поиск
-                }, 300); // Небольшая задержка для комфортного ввода
+                    loadMoreVerbs(true);
+                }, 300);
             });
-            
-            // --- НОВЫЙ ОБРАБОТЧИК ПРОКРУТКИ ---
             tableWrapper.addEventListener('scroll', () => {
-                // Если пользователь прокрутил до 200 пикселей от конца И мы не в процессе загрузки
                 if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) {
-                    loadMoreVerbs(false); // Догружаем следующую порцию
+                    loadMoreVerbs(false);
                 }
             });
-            
             modalCloseButton.addEventListener('click', closeModal);
             modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
-
         } catch (err) {
             console.error("Initialization error:", err);
             searchInput.placeholder = "Error loading database!";
