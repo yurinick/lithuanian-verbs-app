@@ -4,19 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Lithuanian Verbs</title>
-  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sql-httpvfs.js"></script>
+  
+  <!-- Стили и второстепенные скрипты -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body { font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s; }
     #main-content { height: 100vh; display: flex; flex-direction: column; }
+    #table-wrapper { flex-grow: 1; overflow-y: auto; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f1f1f1; }
     ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
     .dark ::-webkit-scrollbar-track { background: #2d3748; }
     .dark ::-webkit-scrollbar-thumb { background: #718096; }
   </style>
+
+  <!-- Ключевые библиотеки для работы с базой данных. Они должны загрузиться до основного кода. -->
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js-httpvfs@0.8.17/dist/sql-httpvfs.js"></script>
+
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased">
 
@@ -39,13 +45,15 @@
      <div id="error-container" class="mt-2 p-2 bg-red-100 dark:bg-red-800 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-200 rounded-md text-sm hidden"></div>
   </header>
 
-  <div id="table-wrapper-container" class="p-4 flex-grow flex flex-col overflow-hidden">
+  <div class="p-4 flex-grow flex flex-col overflow-hidden">
     <div id="table-wrapper" class="overflow-x-auto overflow-y-auto flex-grow bg-white dark:bg-gray-800 rounded-lg shadow-md">
-        <div id="loading-indicator" ...>...</div>
-        <div id="no-results-message" ...>...</div>
+        <div id="loading-indicator" class="text-center py-4 text-gray-600 dark:text-gray-400">Loading...</div>
+        <div id="no-results-message" class="text-center py-10 hidden">
+          <p class="text-lg text-gray-600 dark:text-gray-400">No results found.</p>
+        </div>
         <table class="min-w-full text-sm table-fixed">
             <thead id="table-head" class="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10"></thead>
-            <tbody id="table-body" ...></tbody>
+            <tbody id="table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700"></tbody>
         </table>
     </div>
     <p id="record-count" class="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center flex-shrink-0"></p>
@@ -63,21 +71,18 @@
 </div>
 
 <script>
+// Этот скрипт начнет выполняться после того, как все скрипты в <head> будут загружены
 document.addEventListener('DOMContentLoaded', async () => {
 
-    // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И НАСТРОЙКИ ===
     let worker;
-    // !!! ОБЯЗАТЕЛЬНО УБЕДИТЕСЬ, ЧТО ЭТО ПРАВИЛЬНЫЙ URL ВАШЕГО РЕПОЗИТОРИЯ !!!
     const DB_URL = 'https://yurinick.github.io/lithuanian-verbs-app/verbs.sqlite';
     const TENSE_TRANSLATIONS = {
         "Present tense": "Настоящее время", "Past tense": "Прошедшее время",
         "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение",
         "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время"
     };
-    // Имена столбцов из нашей новой базы данных
     const mainTableHeaders = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
 
-    // === ССЫЛКИ НА ЭЛЕМЕНТЫ DOM ===
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
@@ -91,7 +96,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalCloseButton = document.getElementById('modal-close-button');
     const showError = (message) => { errorContainer.textContent = message; errorContainer.classList.remove('hidden'); };
 
-    // === ИНТЕГРАЦИЯ С TELEGRAM (без изменений) ===
     try {
         const tg = window.Telegram.WebApp;
         tg.ready();
@@ -102,38 +106,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         tg.onEvent('mainButtonClicked', () => tg.close());
     } catch (e) { console.log("Not in Telegram environment."); }
 
-    // === НОВАЯ ЛОГИКА РАБОТЫ С БАЗОЙ ДАННЫХ ===
-	async function initDatabase() {
-	    try {
-	        loadingIndicator.textContent = 'Connecting to database...';
-	        // Ссылки на CDN остаются
-	        const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
-	        const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
+    async function initDatabase() {
+        try {
+            loadingIndicator.textContent = 'Connecting to database...';
+            const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
+            const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
 
-	        // --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Добавляем window.SqlHttpVFS ---
-	        worker = await window.SqlHttpVFS.createDbWorker(
-	            [{
-	                httpUrl: DB_URL,
-	                serverHttpHeaders: {},
-	                databaseLength: 12000000,
-	                timeout: 5000,
-	            }],
-	            workerUrl,
-	            wasmUrl
-	        );
-        
-	        loadingIndicator.textContent = 'Loading initial data...';
-	        const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
-	        renderTable(initialData);
-	    } catch(e) {
-	        console.error('Database initialization failed:', e);
-	        showError('Failed to initialize database. Please check console for details.');
-	    } finally {
-	        loadingIndicator.classList.add('hidden');
-	    }
-	}
+            worker = await window.SqlHttpVFS.createDbWorker(
+                [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 5000 }],
+                workerUrl, wasmUrl
+            );
+            
+            loadingIndicator.textContent = 'Loading initial data...';
+            const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+            renderTable(initialData);
+        } catch(e) {
+            console.error('Database initialization failed:', e);
+            showError('Failed to initialize database. Please check console for details.');
+        } finally {
+            loadingIndicator.classList.add('hidden');
+        }
+    }
 
-    // === НОВАЯ ЛОГИКА ПОИСКА ===
     let debounceTimer;
     searchInput.addEventListener('input', (event) => {
         clearTimeout(debounceTimer);
@@ -153,18 +147,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 300);
     });
 
-    // === ФУНКЦИИ РЕНДЕРИНГА (адаптированы под новые данные) ===
     function renderTable(dataToRender) {
         tableHead.innerHTML = '';
         tableBody.innerHTML = '';
 
         const headerRow = document.createElement('tr');
-        mainTableHeaders.forEach((headerText) => {
+        // Используем реальные заголовки из вашего CSV для отображения
+        const displayHeaders = ['№', 'P', '#', 'Инфинитив', '3 л. наст. вр.', '3 л. прош. вр.', 'Вопрос', 'Перевод'];
+        displayHeaders.forEach((headerText) => {
             const th = document.createElement('th');
-            th.className = 'py-3 text-center text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase tracking-wider';
-            // Простое присвоение имени, без сложной логики
-            th.classList.add('px-2');
-            th.textContent = headerText.replace('_', ' ').replace('val', ''); // Делаем заголовки красивее
+            th.className = 'px-2 py-3 text-center text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase tracking-wider';
+            th.textContent = headerText;
             headerRow.appendChild(th);
         });
         tableHead.appendChild(headerRow);
@@ -173,7 +166,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-50 dark:even:bg-gray-700';
 
-            // Если есть спряжения, делаем строку кликабельной
             if (row.conjugations) {
                 tr.classList.add('cursor-pointer');
                 tr.addEventListener('click', () => showModalForVerb(row));
@@ -182,8 +174,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             mainTableHeaders.forEach(headerKey => {
                 const td = document.createElement('td');
                 td.className = 'px-2 py-2 text-center text-gray-700 dark:text-gray-300 break-words';
-                if (headerKey.includes('infinitive') || headerKey.includes('translation')) {
-                    td.classList.add('text-left'); // Длинные тексты выравниваем по левому краю
+                if (['infinitive', 'present_3rd', 'past_3rd', 'translation'].includes(headerKey)) {
+                    td.classList.add('text-left');
                 }
                 td.textContent = row[headerKey] || '';
                 tr.appendChild(td);
@@ -254,9 +246,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
 
-    // === НАЧАЛЬНЫЙ ЗАПУСК ===
     initDatabase();
 });
 </script>
+
 </body>
 </html>
