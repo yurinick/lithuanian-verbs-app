@@ -23,7 +23,12 @@ window.addEventListener('load', async () => {
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
     const modalCloseButton = document.getElementById('modal-close-button');
-    const showError = (message) => { errorContainer.textContent = message; errorContainer.classList.remove('hidden'); };
+    const showError = (message) => { 
+        if (errorContainer) {
+            errorContainer.textContent = message; 
+            errorContainer.classList.remove('hidden'); 
+        }
+    };
 
     // Telegram
     try {
@@ -32,14 +37,16 @@ window.addEventListener('load', async () => {
         const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
         tg.onEvent('themeChanged', applyTheme);
         applyTheme();
-        tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
-        tg.onEvent('mainButtonClicked', () => tg.close());
+        if (tg.MainButton) {
+            tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
+            tg.onEvent('mainButtonClicked', () => tg.close());
+        }
     } catch (e) { console.log("Not in Telegram environment."); }
 
     
     async function startApp() {
         try {
-            loadingIndicator.textContent = 'Connecting to database...';
+            if (loadingIndicator) loadingIndicator.textContent = 'Connecting to database...';
             
             pool = await createSQLiteHTTPPool({
                 httpOptions: {
@@ -51,7 +58,7 @@ window.addEventListener('load', async () => {
 
             await pool.open(DB_URL);
 
-            loadingIndicator.textContent = 'Loading initial data...';
+            if (loadingIndicator) loadingIndicator.textContent = 'Loading initial data...';
             const initialData = await pool.exec('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
             renderTable(initialData);
 
@@ -59,32 +66,35 @@ window.addEventListener('load', async () => {
             console.error('Database initialization failed:', e);
             showError('Failed to initialize database. Please check console for details.');
         } finally {
-            loadingIndicator.classList.add('hidden');
+            if (loadingIndicator) loadingIndicator.classList.add('hidden');
         }
     }
     
     // ... all other functions
     let debounceTimer;
-    searchInput.addEventListener('input', (event) => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(async () => {
-            if (!pool) return;
-            const searchTerm = event.target.value.trim();
-            if (!searchTerm) {
-                const initialData = await pool.exec('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
-                renderTable(initialData); return;
-            }
-            const searchQuery = searchTerm.split(' ').filter(Boolean).map(word => `${word}*`).join(' ');
-            const results = await pool.exec(
-                `SELECT v.* FROM verbs_fts fts JOIN verbs v ON fts.rowid = v.rowid WHERE fts.verbs_fts MATCH ? ORDER BY rank`, 
-                [searchQuery]
-            );
-            renderTable(results);
-        }, 300);
-    });
+    if (searchInput) {
+        searchInput.addEventListener('input', (event) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(async () => {
+                if (!pool) return;
+                const searchTerm = event.target.value.trim();
+                if (!searchTerm) {
+                    const initialData = await pool.exec('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+                    renderTable(initialData); return;
+                }
+                const searchQuery = searchTerm.split(' ').filter(Boolean).map(word => `${word}*`).join(' ');
+                const results = await pool.exec(
+                    `SELECT v.* FROM verbs_fts fts JOIN verbs v ON fts.rowid = v.rowid WHERE fts.verbs_fts MATCH ? ORDER BY rank`, 
+                    [searchQuery]
+                );
+                renderTable(results);
+            }, 300);
+        });
+    }
 
     function renderTable(dataToRender) {
-        tableHead.innerHTML = ''; tableBody.innerHTML = '';
+        if (tableHead) tableHead.innerHTML = ''; 
+        if (tableBody) tableBody.innerHTML = '';
         const headerRow = document.createElement('tr');
         const displayHeaders = ['№', 'P', '#', 'Инфинитив', '3 л. наст. вр.', '3 л. прош. вр.', 'Вопрос', 'Перевод'];
         displayHeaders.forEach((headerText) => {
@@ -93,7 +103,7 @@ window.addEventListener('load', async () => {
             th.textContent = headerText;
             headerRow.appendChild(th);
         });
-        tableHead.appendChild(headerRow);
+        if (tableHead) tableHead.appendChild(headerRow);
         dataToRender.forEach(row => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150 even:bg-gray-50 dark:even:bg-gray-700';
@@ -110,10 +120,10 @@ window.addEventListener('load', async () => {
                 td.textContent = row[headerKey] || '';
                 tr.appendChild(td);
             });
-            tableBody.appendChild(tr);
+            if (tableBody) tableBody.appendChild(tr);
         });
-        noResultsMessage.classList.toggle('hidden', dataToRender.length === 0);
-        recordCount.textContent = `Showing ${dataToRender.length} results.`;
+        if (noResultsMessage) noResultsMessage.classList.toggle('hidden', dataToRender.length === 0);
+        if (recordCount) recordCount.textContent = `Showing ${dataToRender.length} results.`;
     }
 
     const normalizeForMatch = (str) => str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : '';
@@ -125,8 +135,8 @@ window.addEventListener('load', async () => {
 
     function showModalForVerb(rowData) {
         const verbInfo = JSON.parse(rowData.conjugations || '{}');
-        modalTitle.textContent = `${rowData.infinitive} - ${rowData.translation}`;
-        modalBody.innerHTML = '';
+        if (modalTitle) modalTitle.textContent = `${rowData.infinitive} - ${rowData.translation}`;
+        if (modalBody) modalBody.innerHTML = '';
         const tenses = {
             "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"],
             "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"],
@@ -160,16 +170,16 @@ window.addEventListener('load', async () => {
                     tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-600"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`;
                 });
                 tenseHTML += `</tbody></table>`;
-                modalBody.innerHTML += tenseHTML;
+                if (modalBody) modalBody.innerHTML += tenseHTML;
             }
         });
-        modalOverlay.classList.remove('hidden');
+        if (modalOverlay) modalOverlay.classList.remove('hidden');
     }
 
-    function closeModal() { modalOverlay.classList.add('hidden'); }
-    modalCloseButton.addEventListener('click', closeModal);
-    modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+    function closeModal() { if (modalOverlay) modalOverlay.classList.add('hidden'); }
+    if (modalCloseButton) modalCloseButton.addEventListener('click', closeModal);
+    if (modalOverlay) modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalOverlay && !modalOverlay.classList.contains('hidden')) closeModal(); });
 
     startApp();
 });
