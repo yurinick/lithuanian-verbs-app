@@ -20,11 +20,11 @@
 
   <!-- Правильная ссылка -->
   <script type="module">
-    import { createDbWorker } from "./js/vfs-http-worker-bundle.js";
+    import { createSQLiteHTTPPool } from "./node_modules/sqlite-wasm-http/dist/index.js";
 
     window.addEventListener('load', async () => {
     
-    let worker;
+    let pool;
     const DB_URL = 'https://yurinick.github.io/lithuanian-verbs-app/verbs.sqlite';
     const TENSE_TRANSLATIONS = {
         "Present tense": "Настоящее время", "Past tense": "Прошедшее время",
@@ -63,20 +63,18 @@
         try {
             loadingIndicator.textContent = 'Connecting to database...';
             
-            const worker = await createDbWorker(
-                [
-                    {
-                        from: "http",
-                        url: DB_URL,
-                        name: "verbs.sqlite"
-                    }
-                ],
-                new URL("./js/sqlite.worker.js", import.meta.url).toString(),
-                new URL("./js/sql-wasm.wasm", import.meta.url).toString()
-            );
+            pool = await createSQLiteHTTPPool({
+                httpOptions: {
+                    url: DB_URL,
+                    workerUrl: new URL("./js/sqlite.worker.js", import.meta.url).toString(),
+                    wasmUrl: new URL("./js/sql-wasm.wasm", import.meta.url).toString()
+                }
+            });
+
+            await pool.open(DB_URL);
 
             loadingIndicator.textContent = 'Loading initial data...';
-            const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+            const initialData = await pool.exec('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
             renderTable(initialData);
 
         } catch (e) {
@@ -92,20 +90,19 @@
     searchInput.addEventListener('input', (event) => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(async () => {
-            if (!worker) return;
+            if (!pool) return;
             const searchTerm = event.target.value.trim();
             if (!searchTerm) {
-                const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+                const initialData = await pool.exec('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
                 renderTable(initialData); return;
             }
             const searchQuery = searchTerm.split(' ').filter(Boolean).map(word => `${word}*`).join(' ');
-            const results = await worker.db.query(
+            const results = await pool.exec(
                 `SELECT v.* FROM verbs_fts fts JOIN verbs v ON fts.rowid = v.rowid WHERE fts.verbs_fts MATCH ? ORDER BY rank`, 
                 [searchQuery]
             );
             renderTable(results);
         }, 300);
-    });
 
     function renderTable(dataToRender) {
         tableHead.innerHTML = ''; tableBody.innerHTML = '';
