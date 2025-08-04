@@ -102,27 +102,28 @@ document.addEventListener('DOMContentLoaded', () => {
         tg.onEvent('mainButtonClicked', () => tg.close());
     } catch (e) { console.log("Not in Telegram environment."); }
 
-    async function startApp() {
-        try {
-            loadingIndicator.textContent = 'Connecting to database...';
-            const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sqlite.worker.js';
-            const wasmUrl = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js-httpvfs/0.8.17/sql-wasm.wasm';
+	async function startApp() {
+	    try {
+	        loadingIndicator.textContent = 'Connecting to database...';
+	        // ИСПРАВЛЕНИЕ: Используем UNPKG и здесь
+	        const workerUrl = 'https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sqlite.worker.js';
+	        const wasmUrl = 'https://unpkg.com/sql.js-httpvfs@0.8.17/dist/sql-wasm.wasm';
 
-            worker = await window.SqlHttpVFS.createDbWorker(
-                [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 10000 }],
-                workerUrl, wasmUrl
-            );
-            
-            loadingIndicator.textContent = 'Loading initial data...';
-            const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
-            renderTable(initialData);
-        } catch(e) {
-            console.error('Database initialization failed:', e);
-            showError('Failed to initialize database. Please check console for details.');
-        } finally {
-            loadingIndicator.classList.add('hidden');
-        }
-    }
+	        worker = await window.SqlHttpVFS.createDbWorker(
+	            [{ httpUrl: DB_URL, serverHttpHeaders: {}, databaseLength: 12000000, timeout: 10000 }],
+	            workerUrl, wasmUrl
+	        );
+        
+	        loadingIndicator.textContent = 'Loading initial data...';
+	        const initialData = await worker.db.query('SELECT * FROM verbs ORDER BY id_num LIMIT 500;');
+	        renderTable(initialData);
+	    } catch(e) {
+	        console.error('Database initialization failed:', e);
+	        showError('Failed to initialize database. Please check console for details.');
+	    } finally {
+	        loadingIndicator.classList.add('hidden');
+	    }
+	}
 
     function waitForLibraryAndInit() {
         let attempts = 0;
