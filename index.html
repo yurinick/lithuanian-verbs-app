@@ -196,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkTelegramAccess(initData) {
+        console.log("Отправляю на сервер initData:", initData);
         try {
             const response = await fetch(SERVERLESS_FUNCTION_URL, {
                 method: 'POST',
