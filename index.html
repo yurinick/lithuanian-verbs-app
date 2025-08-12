@@ -199,23 +199,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkTelegramAccess(initData) {
-        console.log("LOG 3: Entering checkTelegramAccess with initData length:", initData.length);
         try {
-            console.log("LOG 4: Attempting to fetch:", SERVERLESS_FUNCTION_URL);
             const response = await fetch(SERVERLESS_FUNCTION_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ initData: initData })
             });
-            console.log("LOG 5: Fetch response status:", response.status);
-            if (!response.ok) {
-                throw new Error(`Server responded with status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
             const data = await response.json();
-            console.log("LOG 6: Response from server:", data);
             return data.isAllowed;
         } catch (error) {
-            console.error("CRITICAL: fetch request itself failed:", error);
+            console.error("Access check failed:", error);
             throw error;
         }
     }
@@ -279,9 +272,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function initializeApp() {
-        console.log("LOG 1: initializeApp started.");
         try {
-            if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined' || !Telegram.WebApp.initData) {
+            if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
                 console.log("Not a valid Telegram environment. Providing free access.");
                 showAppContent();
                 main();
@@ -293,8 +285,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
             tg.onEvent('themeChanged', applyTheme);
             applyTheme();
-            tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
+
+            // --- ИСПРАВЛЕНИЕ: Разбиваем вызовы на отдельные строки ---
+            const mainButton = tg.MainButton;
+            mainButton.setText('Закрыть');
+            mainButton.setTextColor('#ffffff');
+            mainButton.setColor('#0ea5e9');
+            mainButton.show();
+            
             tg.onEvent('mainButtonClicked', () => tg.close());
+            
             const backButton = tg.BackButton;
             backButton.show();
             tg.onEvent('backButtonClicked', () => {
@@ -303,16 +303,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadMoreVerbs(true);
             });
             
-            console.log("LOG 2: Telegram environment detected. Checking access...");
-            const isAllowed = await checkTelegramAccess(tg.initData);
-
-            if (isAllowed) {
-                console.log("Access GRANTED.");
-                showAppContent();
-                main(); 
+            if (tg.initData) {
+                console.log("Telegram environment detected. Checking access...");
+                const isAllowed = await checkTelegramAccess(tg.initData);
+                if (isAllowed) {
+                    showAppContent();
+                    main(); 
+                } else {
+                    showAccessDeniedScreen();
+                }
             } else {
-                console.log("Access DENIED by server.");
-                showAccessDeniedScreen();
+                console.log("Not a valid Telegram environment (no initData). Providing free access.");
+                showAppContent();
+                main();
             }
         } catch (e) {
             console.error("CRITICAL ERROR during initialization:", e);
