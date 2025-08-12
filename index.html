@@ -186,12 +186,55 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('critical-error-message').textContent = message;
         document.getElementById('critical-error').classList.remove('hidden');
     }
+
+    // НОВАЯ ФУНКЦИЯ ДЛЯ ОБРАБОТКИ КЛИКА
+async function handleRequestAccessClick() {
+    const requestButton = document.getElementById('requestAccessButton');
+    const originalText = requestButton.textContent;
+    requestButton.disabled = true;
+    requestButton.textContent = 'Отправка...';
+
+    try {
+        const tg = Telegram.WebApp;
+        if (!tg.initData) {
+            alert('Не удалось получить данные Telegram. Пожалуйста, перезапустите приложение.');
+            requestButton.disabled = false;
+            requestButton.textContent = originalText;
+            return;
+        }
+
+        const response = await fetch("https://verbs-api-seven.vercel.app/api/request-access", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: tg.initData })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            alert('Ваш запрос успешно отправлен администратору! Вы получите уведомление в Telegram о решении.');
+            requestButton.textContent = 'Отправлено!';
+        } else {
+            throw new Error(result.message || 'Произошла ошибка при отправке запроса.');
+        }
+
+    } catch (error) {
+        console.error('Failed to send access request:', error);
+        alert(`Ошибка: ${error.message}`);
+        requestButton.disabled = false;
+        requestButton.textContent = originalText;
+    }
+}
+
     
     function showAccessDeniedScreen() {
-        document.getElementById('main-content').style.display = 'none';
-        document.getElementById('access-denied').classList.remove('hidden');
-        document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?text=/request_access`;
-    }
+    document.getElementById('main-content').style.display = 'none';
+    document.getElementById('access-denied').classList.remove('hidden');
+    const requestButton = document.getElementById('requestAccessButton');
+    requestButton.href = '#';
+    requestButton.removeEventListener('click', handleRequestAccessClick);
+    requestButton.addEventListener('click', handleRequestAccessClick);
+}
+
 
     function showAppContent() {
         document.getElementById('main-content').style.display = 'flex';
