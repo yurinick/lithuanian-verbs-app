@@ -18,6 +18,13 @@
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased">
 
+<div id="critical-error" class="hidden fixed inset-0 bg-red-100 text-red-900 flex items-center justify-center z-50 text-center p-4">
+    <div>
+        <p class="text-2xl font-bold">Критическая ошибка</p>
+        <p class="mt-2" id="critical-error-message"></p>
+    </div>
+</div>
+
 <div id="access-denied" class="hidden fixed inset-0 bg-gray-100 dark:bg-gray-900 flex items-center justify-center z-50 text-center p-4">
     <div>
         <p class="text-2xl font-bold text-red-600 dark:text-red-500">Доступ запрещен</p>
@@ -59,16 +66,24 @@
     </div>
 </div>
 
-<!-- ИСПРАВЛЕНИЕ 1: Возвращаем относительный путь -->
 <script src="./sql-wasm.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // ... (весь код до функции main() без изменений) ...
+    // === КОНФИГУРАЦИЯ ===
     const SERVERLESS_FUNCTION_URL = "https://verbs-api-seven.vercel.app/api/check-access";
-    const BOT_USERNAME = "yurinick_bot";
-    let db, totalVerbsCount = 0, currentOffset = 0, isLoading = false, currentSearchTerm = "";
+    const BOT_USERNAME = "yurinick_bot"; // Пример, замените на ваш
+
+    // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+    let db;
+    let totalVerbsCount = 0;
     const PAGE_SIZE = 100;
+    let currentOffset = 0;
+    let isLoading = false;
+    let currentSearchTerm = "";
+
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
+    
+    // === DOM-ЭЛЕМЕНТЫ ===
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
@@ -79,6 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalBody = document.getElementById('modal-body');
     const modalCloseButton = document.getElementById('modal-close-button');
     const tableWrapper = document.getElementById('table-wrapper');
+
+    // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const normalizeForMatch = (s) => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const getPreferredForm = (formsArray) => {
@@ -86,6 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const formWithDiacritics = formsArray.find(form => form !== normalizeForMatch(form));
         return formWithDiacritics || formsArray[0];
     };
+
+    // === ФУНКЦИИ РЕНДЕРИНГА ===
     function renderTable(verbs, append = false) {
         if (!append) {
             const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод'];
@@ -99,6 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tableHead.innerHTML = headerHTML;
             tableBody.innerHTML = '';
         }
+        
         verbs.forEach(verb => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
@@ -120,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         noResultsMessage.classList.toggle('hidden', tableBody.children.length === 0);
         recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
+
     function showModalForVerb(verb) {
         if (!verb.conjugations) return;
         const verbInfo = JSON.parse(verb.conjugations);
@@ -154,75 +175,51 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         modalOverlay.classList.remove('hidden');
     }
-    function closeModal() { modalOverlay.classList.add('hidden'); }
-    async function checkTelegramAccess(initData) { /* ... без изменений ... */ }
-    function showAccessDeniedScreen() { /* ... без изменений ... */ }
-    function showAppContent() { /* ... без изменений ... */ }
-    async function loadMoreVerbs(isNewSearch = false) { /* ... без изменений ... */ }
     
-    async function main() {
-        try {
-            // ИСПРАВЛЕНИЕ 2: Возвращаем относительные пути
-            const SQL = await initSqlJs({ 
-                locateFile: file => `./${file}` 
-            });
-            // ИСПРАВЛЕНИЕ 3: Возвращаем относительный путь
-            const response = await fetch("./verbs.sqlite");
-            
-            const dbFile = await response.arrayBuffer();
-            db = new SQL.Database(new Uint8Array(dbFile));
-            
-            const countResult = db.exec("SELECT COUNT(*) FROM verbs");
-            totalVerbsCount = countResult[0].values[0][0];
-            searchInput.disabled = false;
-            searchInput.placeholder = "Search any form...";
-            await loadMoreVerbs(true);
-            let debounceTimer;
-            searchInput.addEventListener('input', (e) => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                    currentSearchTerm = e.target.value;
-                    loadMoreVerbs(true);
-                }, 300);
-            });
-            tableWrapper.addEventListener('scroll', () => {
-                if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) {
-                    loadMoreVerbs(false);
-                }
-            });
-            modalCloseButton.addEventListener('click', closeModal);
-            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
-        } catch (err) {
-            console.error("Initialization error:", err);
-            searchInput.placeholder = "Error loading database!";
-        }
+    function closeModal() { modalOverlay.classList.add('hidden'); }
+
+    // === ЛОГИКА АВТОРИЗАЦИИ И ЗАПУСКА ===
+    function showCriticalError(message) {
+        document.getElementById('main-content').style.display = 'none';
+        document.getElementById('access-denied').classList.add('hidden');
+        document.getElementById('critical-error-message').textContent = message;
+        document.getElementById('critical-error').classList.remove('hidden');
     }
     
-    // Вставляем тела остальных функций, чтобы все было в одном месте
     function showAccessDeniedScreen() {
         document.getElementById('main-content').style.display = 'none';
         document.getElementById('access-denied').classList.remove('hidden');
         document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?start=request_access`;
     }
+
     function showAppContent() {
         document.getElementById('main-content').style.display = 'flex';
         document.getElementById('access-denied').classList.add('hidden');
+        document.getElementById('critical-error').classList.add('hidden');
     }
+
     async function checkTelegramAccess(initData) {
+        console.log("LOG 3: Entering checkTelegramAccess with initData length:", initData.length);
         try {
+            console.log("LOG 4: Attempting to fetch:", SERVERLESS_FUNCTION_URL);
             const response = await fetch(SERVERLESS_FUNCTION_URL, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ initData: initData })
             });
-            if (!response.ok) return false;
+            console.log("LOG 5: Fetch response status:", response.status);
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
             const data = await response.json();
+            console.log("LOG 6: Response from server:", data);
             return data.isAllowed;
         } catch (error) {
-            console.error("Access check failed:", error);
-            return false;
+            console.error("CRITICAL: fetch request itself failed:", error);
+            throw error;
         }
     }
+
     async function loadMoreVerbs(isNewSearch = false) {
         if (!db || isLoading) return;
         isLoading = true;
@@ -248,9 +245,50 @@ document.addEventListener('DOMContentLoaded', () => {
         isLoading = false;
     }
 
-    async function initializeApp() {
+    async function main() {
         try {
-            const tg = window.Telegram.WebApp;
+            const SQL = await initSqlJs({ locateFile: file => `./${file}` });
+            const response = await fetch("./verbs.sqlite");
+            const dbFile = await response.arrayBuffer();
+            db = new SQL.Database(new Uint8Array(dbFile));
+            const countResult = db.exec("SELECT COUNT(*) FROM verbs");
+            totalVerbsCount = countResult[0].values[0][0];
+            searchInput.disabled = false;
+            searchInput.placeholder = "Search any form...";
+            await loadMoreVerbs(true);
+            let debounceTimer;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    currentSearchTerm = e.target.value;
+                    loadMoreVerbs(true);
+                }, 300);
+            });
+            tableWrapper.addEventListener('scroll', () => {
+                if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) {
+                    loadMoreVerbs(false);
+                }
+            });
+            modalCloseButton.addEventListener('click', closeModal);
+            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+        } catch (err) {
+            console.error("Initialization error:", err);
+            showCriticalError(`Failed to load database. Error: ${err.message}`);
+        }
+    }
+
+    async function initializeApp() {
+        console.log("LOG 1: initializeApp started.");
+        try {
+            if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined' || !Telegram.WebApp.initData) {
+                console.log("Not a valid Telegram environment. Providing free access.");
+                showAppContent();
+                main();
+                return;
+            }
+
+            const tg = Telegram.WebApp;
             tg.ready();
             const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
             tg.onEvent('themeChanged', applyTheme);
@@ -265,18 +303,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadMoreVerbs(true);
             });
             
-            if (tg.initData) {
-                const isAllowed = await checkTelegramAccess(tg.initData);
-                if (isAllowed) { showAppContent(); main(); } 
-                else { showAccessDeniedScreen(); }
-            } else {
+            console.log("LOG 2: Telegram environment detected. Checking access...");
+            const isAllowed = await checkTelegramAccess(tg.initData);
+
+            if (isAllowed) {
+                console.log("Access GRANTED.");
                 showAppContent();
-                main();
+                main(); 
+            } else {
+                console.log("Access DENIED by server.");
+                showAccessDeniedScreen();
             }
         } catch (e) {
-            console.log("Not in Telegram environment, providing free access.");
-            showAppContent();
-            main();
+            console.error("CRITICAL ERROR during initialization:", e);
+            showCriticalError(e.message);
         }
     }
     
