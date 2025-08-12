@@ -198,16 +198,18 @@ async function handleRequestAccessClick() {
         const tg = Telegram.WebApp;
         if (!tg.initData) {
             alert('Не удалось получить данные Telegram. Пожалуйста, перезапустите приложение.');
-            requestButton.disabled = false;
-            requestButton.textContent = originalText;
-            return;
+            throw new Error('initData is missing');
         }
 
-        const response = await fetch("https://verbs-api-seven.vercel.app/api/request-access", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ initData: tg.initData })
-        });
+        const response = await fetch(REQUEST_ACCESS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initData: tg.initData })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Сервер ответил ошибкой: ${response.status}`);
+            }
 
         const result = await response.json();
         if (result.success) {
@@ -229,6 +231,7 @@ async function handleRequestAccessClick() {
     function showAccessDeniedScreen() {
     document.getElementById('main-content').style.display = 'none';
     document.getElementById('access-denied').classList.remove('hidden');
+
     const requestButton = document.getElementById('requestAccessButton');
     requestButton.href = '#';
     requestButton.removeEventListener('click', handleRequestAccessClick);
@@ -333,7 +336,7 @@ async function handleRequestAccessClick() {
             if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
                 console.log("Not a valid Telegram environment. Providing free access.");
                 showAppContent();
-                main();
+                await main();
                 return;
             }
 
@@ -344,21 +347,17 @@ async function handleRequestAccessClick() {
             applyTheme();
             tg.MainButton.setParams({ text: 'Закрыть', color: '#0ea5e9', text_color: '#ffffff', is_visible: true });
             tg.onEvent('mainButtonClicked', () => tg.close());
-            const backButton = tg.BackButton;
-            backButton.show();
-            tg.onEvent('backButtonClicked', () => {
-                searchInput.value = '';
-                currentSearchTerm = '';
-                loadMoreVerbs(true);
-            });
             
             if (tg.initData) {
                 const isAllowed = await checkTelegramAccess(tg.initData);
-                if (isAllowed) { showAppContent(); main(); } 
-                else { showAccessDeniedScreen(); }
+                if (isAllowed) { 
+                    showAppContent();
+                    await main();
+                } else { 
+                    showAccessDeniedScreen(); 
+                }
             } else {
-                showAppContent();
-                main();
+                showAccessDeniedScreen(); // Если нет initData, доступ запрещен
             }
         } catch (e) {
             console.error("CRITICAL ERROR during initialization:", e);
