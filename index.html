@@ -21,16 +21,12 @@
 <div id="access-denied" class="hidden fixed inset-0 bg-gray-100 dark:bg-gray-900 flex items-center justify-center z-50 text-center p-4">
     <div>
         <p class="text-2xl font-bold text-red-600 dark:text-red-500">Доступ запрещен</p>
-        <p class="mt-2 text-gray-600 dark:text-gray-400">
-            Чтобы получить доступ, пожалуйста, отправьте запрос через Telegram-бота.
-        </p>
-        <a id="requestAccessButton" href="#" target="_blank" class="mt-4 inline-block bg-sky-600 text-white font-bold py-2 px-4 rounded hover:bg-sky-700 transition">
-            Отправить запрос
-        </a>
+        <p class="mt-2 text-gray-600 dark:text-gray-400">Чтобы получить доступ, пожалуйста, отправьте запрос через Telegram-бота.</p>
+        <a id="requestAccessButton" href="#" target="_blank" class="mt-4 inline-block bg-sky-600 text-white font-bold py-2 px-4 rounded hover:bg-sky-700 transition">Отправить запрос</a>
     </div>
 </div>
 
-<div id="main-content" class="mx-auto max-w-7xl flex-flex-col h-screen">
+<div id="main-content" class="mx-auto max-w-7xl flex flex-col h-screen">
   <header class="p-4 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
     <h1 class="text-xl sm:text-2xl font-bold text-sky-700 dark:text-sky-300 text-center">
       Lithuanian Verbs Search
@@ -63,24 +59,16 @@
     </div>
 </div>
 
+<!-- ИСПРАВЛЕНИЕ 1: Возвращаем относительный путь -->
 <script src="./sql-wasm.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // === КОНФИГУРАЦИЯ ===
+    // ... (весь код до функции main() без изменений) ...
     const SERVERLESS_FUNCTION_URL = "https://verbs-api-seven.vercel.app/api/check-access";
-    const BOT_USERNAME = "yurinick_bot"; // Пример, замените на ваш
-
-    // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
-    let db;
-    let totalVerbsCount = 0;
+    const BOT_USERNAME = "yurinick_bot";
+    let db, totalVerbsCount = 0, currentOffset = 0, isLoading = false, currentSearchTerm = "";
     const PAGE_SIZE = 100;
-    let currentOffset = 0;
-    let isLoading = false;
-    let currentSearchTerm = "";
-
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
-    
-    // === DOM-ЭЛЕМЕНТЫ ===
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
@@ -91,8 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalBody = document.getElementById('modal-body');
     const modalCloseButton = document.getElementById('modal-close-button');
     const tableWrapper = document.getElementById('table-wrapper');
-
-    // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const normalizeForMatch = (s) => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const getPreferredForm = (formsArray) => {
@@ -100,13 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const formWithDiacritics = formsArray.find(form => form !== normalizeForMatch(form));
         return formWithDiacritics || formsArray[0];
     };
-
-    // === ФУНКЦИИ РЕНДЕРИНГА ===
-    function renderTable(verbs, append = false) { /* ... Тело функции без изменений ... */ }
-    function showModalForVerb(verb) { /* ... Тело функции без изменений ... */ }
-    function closeModal() { modalOverlay.classList.add('hidden'); }
-
-    // Вставляем полные тела функций renderTable и showModalForVerb, чтобы избежать ошибок
     function renderTable(verbs, append = false) {
         if (!append) {
             const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод'];
@@ -120,7 +99,6 @@ document.addEventListener('DOMContentLoaded', () => {
             tableHead.innerHTML = headerHTML;
             tableBody.innerHTML = '';
         }
-        
         verbs.forEach(verb => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
@@ -142,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
         noResultsMessage.classList.toggle('hidden', tableBody.children.length === 0);
         recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
-
     function showModalForVerb(verb) {
         if (!verb.conjugations) return;
         const verbInfo = JSON.parse(verb.conjugations);
@@ -177,45 +154,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         modalOverlay.classList.remove('hidden');
     }
-
-    // === ЛОГИКА АВТОРИЗАЦИИ И ЗАПУСКА ===
-    function showAccessDeniedScreen() {
-        document.getElementById('main-content').style.display = 'none';
-        document.getElementById('access-denied').classList.remove('hidden');
-        document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?start=request_access`;
-    }
-
-    function showAppContent() {
-        document.getElementById('main-content').style.display = 'flex';
-        document.getElementById('access-denied').classList.add('hidden');
-    }
-
-    async function checkTelegramAccess(initData) {
-        console.log("LOG 3: Entering checkTelegramAccess with initData length:", initData.length);
-        try {
-            console.log("LOG 4: Attempting to fetch:", SERVERLESS_FUNCTION_URL);
-            const response = await fetch(SERVERLESS_FUNCTION_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ initData: initData })
-            });
-            console.log("LOG 5: Fetch response status:", response.status);
-            if (!response.ok) return false;
-            const data = await response.json();
-            console.log("LOG 6: Response from server:", data);
-            return data.isAllowed;
-        } catch (error) {
-            console.error("CRITICAL: fetch request itself failed:", error);
-            return false;
-        }
-    }
-
+    function closeModal() { modalOverlay.classList.add('hidden'); }
+    async function checkTelegramAccess(initData) { /* ... без изменений ... */ }
+    function showAccessDeniedScreen() { /* ... без изменений ... */ }
+    function showAppContent() { /* ... без изменений ... */ }
+    async function loadMoreVerbs(isNewSearch = false) { /* ... без изменений ... */ }
+    
     async function main() {
         try {
-            const SQL = await initSqlJs({ locateFile: file => `./${file}` });
+            // ИСПРАВЛЕНИЕ 2: Возвращаем относительные пути
+            const SQL = await initSqlJs({ 
+                locateFile: file => `./${file}` 
+            });
+            // ИСПРАВЛЕНИЕ 3: Возвращаем относительный путь
             const response = await fetch("./verbs.sqlite");
+            
             const dbFile = await response.arrayBuffer();
             db = new SQL.Database(new Uint8Array(dbFile));
+            
             const countResult = db.exec("SELECT COUNT(*) FROM verbs");
             totalVerbsCount = countResult[0].values[0][0];
             searchInput.disabled = false;
@@ -242,9 +198,57 @@ document.addEventListener('DOMContentLoaded', () => {
             searchInput.placeholder = "Error loading database!";
         }
     }
+    
+    // Вставляем тела остальных функций, чтобы все было в одном месте
+    function showAccessDeniedScreen() {
+        document.getElementById('main-content').style.display = 'none';
+        document.getElementById('access-denied').classList.remove('hidden');
+        document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?start=request_access`;
+    }
+    function showAppContent() {
+        document.getElementById('main-content').style.display = 'flex';
+        document.getElementById('access-denied').classList.add('hidden');
+    }
+    async function checkTelegramAccess(initData) {
+        try {
+            const response = await fetch(SERVERLESS_FUNCTION_URL, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initData: initData })
+            });
+            if (!response.ok) return false;
+            const data = await response.json();
+            return data.isAllowed;
+        } catch (error) {
+            console.error("Access check failed:", error);
+            return false;
+        }
+    }
+    async function loadMoreVerbs(isNewSearch = false) {
+        if (!db || isLoading) return;
+        isLoading = true;
+        if (isNewSearch) currentOffset = 0;
+        let stmt;
+        const normalizedTerm = normalizeForSearch(currentSearchTerm);
+        const trimmedTerm = currentSearchTerm.trim();
+        if (trimmedTerm && !isNaN(trimmedTerm)) {
+             stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`);
+             stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
+        } else if (normalizedTerm) {
+            stmt = db.prepare(`SELECT * FROM verbs WHERE infinitive_norm LIKE :term OR translation_norm LIKE :term OR present_3rd_norm LIKE :term OR past_3rd_norm LIKE :term OR question_norm LIKE :term LIMIT :limit OFFSET :offset`);
+            stmt.bind({ ':term': `%${normalizedTerm}%`, ':limit': PAGE_SIZE, ':offset': currentOffset });
+        } else {
+            stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
+            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
+        }
+        const results = [];
+        while(stmt.step()) { results.push(stmt.getAsObject()); }
+        stmt.free();
+        renderTable(results, !isNewSearch);
+        currentOffset += results.length;
+        isLoading = false;
+    }
 
     async function initializeApp() {
-        console.log("LOG 1: initializeApp started.");
         try {
             const tg = window.Telegram.WebApp;
             tg.ready();
@@ -253,28 +257,29 @@ document.addEventListener('DOMContentLoaded', () => {
             applyTheme();
             tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
             tg.onEvent('mainButtonClicked', () => tg.close());
-
+            const backButton = tg.BackButton;
+            backButton.show();
+            tg.onEvent('backButtonClicked', () => {
+                searchInput.value = '';
+                currentSearchTerm = '';
+                loadMoreVerbs(true);
+            });
+            
             if (tg.initData) {
-                console.log("LOG 2: Telegram environment detected. initData is present.");
                 const isAllowed = await checkTelegramAccess(tg.initData);
-                if (isAllowed) {
-                    showAppContent();
-                    main(); 
-                } else {
-                    showAccessDeniedScreen();
-                }
+                if (isAllowed) { showAppContent(); main(); } 
+                else { showAccessDeniedScreen(); }
             } else {
-                console.log("Not in Telegram or no initData. Providing free access.");
                 showAppContent();
                 main();
             }
         } catch (e) {
-            console.error("Error in initializeApp:", e);
+            console.log("Not in Telegram environment, providing free access.");
             showAppContent();
             main();
         }
     }
-
+    
     initializeApp();
 });
 </script>
