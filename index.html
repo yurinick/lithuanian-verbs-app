@@ -70,9 +70,9 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // === КОНФИГУРАЦИЯ ===
-    const SERVERLESS_FUNCTION_URL = "https://verbs-api-seven.vercel.app/api/check-access";
-    const BOT_USERNAME = "lithuanian_verbs_bot";
+    // === КОНФИГУРАЦИЯ (ИСПРАВЛЕНО) ===
+    const CHECK_ACCESS_URL = "https://verbs-api-seven.vercel.app/api/check-access";
+    const REQUEST_ACCESS_URL = "https://verbs-api-seven.vercel.app/api/request-access";
 
     // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
     let db;
@@ -81,7 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentOffset = 0;
     let isLoading = false;
     let currentSearchTerm = "";
-
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
     
     // === DOM-ЭЛЕМЕНТЫ ===
@@ -98,88 +97,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
-    const normalizeForMatch = (s) => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const getPreferredForm = (formsArray) => {
         if (!formsArray || formsArray.length === 0) return '-';
-        const formWithDiacritics = formsArray.find(form => form !== normalizeForMatch(form));
+        const formWithDiacritics = formsArray.find(form => form !== form.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
         return formWithDiacritics || formsArray[0];
     };
 
-    // === ФУНКЦИИ РЕНДЕРИНГА ===
+    // === ФУНКЦИИ РЕНДЕРИНГА (без изменений) ===
     function renderTable(verbs, append = false) {
-        if (!append) {
-            const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод'];
-            let headerHTML = '<tr>';
-            headers.forEach(h => {
-                let classes = 'py-3 px-4 text-left text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase';
-                if (['№', 'P', '#'].includes(h)) classes += ' w-[50px] text-center px-1';
-                headerHTML += `<th class="${classes}">${h}</th>`;
-            });
-            headerHTML += '</tr>';
-            tableHead.innerHTML = headerHTML;
-            tableBody.innerHTML = '';
-        }
-        
-        verbs.forEach(verb => {
-            const tr = document.createElement('tr');
-            tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
-            if (verb.conjugations) {
-                tr.classList.add('cursor-pointer');
-                tr.addEventListener('click', () => showModalForVerb(verb));
-            }
-            const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
-            let rowHTML = '';
-            db_keys.forEach(key => {
-                let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300';
-                 if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400';
-                 else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
-                rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`;
-            });
-            tr.innerHTML = rowHTML;
-            tableBody.appendChild(tr);
-        });
-        noResultsMessage.classList.toggle('hidden', tableBody.children.length === 0);
-        recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
+        if (!append) { const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод']; let headerHTML = '<tr>'; headers.forEach(h => { let classes = 'py-3 px-4 text-left text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase'; if (['№', 'P', '#'].includes(h)) classes += ' w-[50px] text-center px-1'; headerHTML += `<th class="${classes}">${h}</th>`; }); headerHTML += '</tr>'; tableHead.innerHTML = headerHTML; tableBody.innerHTML = ''; }
+        verbs.forEach(verb => { const tr = document.createElement('tr'); tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700'; if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb)); } const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation']; let rowHTML = ''; db_keys.forEach(key => { let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300'; if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400'; else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200'; rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`; }); tr.innerHTML = rowHTML; tableBody.appendChild(tr); });
+        noResultsMessage.classList.toggle('hidden', tableBody.children.length === 0); recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
-
     function showModalForVerb(verb) {
-        if (!verb.conjugations) return;
-        const verbInfo = JSON.parse(verb.conjugations);
-        modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`;
-        modalBody.innerHTML = '';
-        const tenses = { "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"], "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"], "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"] };
-        const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
-        const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
-        let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
-        tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
-        mainTenses.forEach(tense => { tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`; });
-        tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
-        persons.forEach((person, personIndex) => {
-            tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`;
-            mainTenses.forEach(tense => {
-                const item = tenses[tense] ? tenses[tense][personIndex] : null;
-                const form = item ? getPreferredForm(item.forms) : '-';
-                tableHTML += `<td class="px-2 py-1">${form}</td>`;
-            });
-            tableHTML += `</tr>`;
-        });
-        tableHTML += `</tbody></table></div>`;
-        modalBody.innerHTML = tableHTML;
-        ["Imperative mood", "Past freq. tense"].forEach(tense => {
-            if (tenses[tense] && tenses[tense].length > 0) {
-                let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
-                tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
-                tenses[tense].forEach(row => { tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`; });
-                tenseHTML += `</tbody></table>`;
-                modalBody.innerHTML += tenseHTML;
-            }
-        });
+        if (!verb.conjugations) return; const verbInfo = JSON.parse(verb.conjugations); modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`; modalBody.innerHTML = ''; const tenses = { "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"], "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"], "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"] }; const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"]; const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"]; let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`; tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`; mainTenses.forEach(tense => { tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`; }); tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`; persons.forEach((person, personIndex) => { tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`; mainTenses.forEach(tense => { const item = tenses[tense] ? tenses[tense][personIndex] : null; const form = item ? getPreferredForm(item.forms) : '-'; tableHTML += `<td class="px-2 py-1">${form}</td>`; }); tableHTML += `</tr>`; }); tableHTML += `</tbody></table></div>`; modalBody.innerHTML = tableHTML;
+        ["Imperative mood", "Past freq. tense"].forEach(tense => { if (tenses[tense] && tenses[tense].length > 0) { let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`; tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`; tenses[tense].forEach(row => { tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`; }); tenseHTML += `</tbody></table>`; modalBody.innerHTML += tenseHTML; } });
         modalOverlay.classList.remove('hidden');
     }
-    
     function closeModal() { modalOverlay.classList.add('hidden'); }
 
-    // === ЛОГИКА АВТОРИЗАЦИИ И ЗАПУСКА ===
+    // --- БЛОК ЛОГИКИ ДОСТУПА (ПОЛНОСТЬЮ ПЕРЕПИСАН) ---
     function showCriticalError(message) {
         document.getElementById('main-content').style.display = 'none';
         document.getElementById('access-denied').classList.add('hidden');
@@ -187,57 +124,57 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('critical-error').classList.remove('hidden');
     }
 
-    // НОВАЯ ФУНКЦИЯ ДЛЯ ОБРАБОТКИ КЛИКА
-async function handleRequestAccessClick() {
-    const requestButton = document.getElementById('requestAccessButton');
-    const originalText = requestButton.textContent;
-    requestButton.disabled = true;
-    requestButton.textContent = 'Отправка...';
+    async function handleRequestAccessClick(event) {
+        event.preventDefault(); // Предотвращаем любые действия по умолчанию
+        const requestButton = document.getElementById('requestAccessButton');
+        const originalText = requestButton.textContent;
+        requestButton.disabled = true;
+        requestButton.textContent = 'Отправка...';
 
-    try {
-        const tg = Telegram.WebApp;
-        if (!tg.initData) {
-            alert('Не удалось получить данные Telegram. Пожалуйста, перезапустите приложение.');
-            throw new Error('initData is missing');
-        }
+        try {
+            const tg = Telegram.WebApp;
+            if (!tg.initData) {
+                alert('Не удалось получить данные Telegram. Пожалуйста, перезапустите приложение.');
+                throw new Error('initData is missing');
+            }
 
-        const response = await fetch(REQUEST_ACCESS_URL, {
+            const response = await fetch(REQUEST_ACCESS_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ initData: tg.initData })
             });
 
             if (!response.ok) {
-                throw new Error(`Сервер ответил ошибкой: ${response.status}`);
+                const errorData = await response.json().catch(() => ({ message: 'Не удалось прочитать ответ сервера.' }));
+                throw new Error(`Сервер ответил ошибкой: ${response.status}. ${errorData.message || ''}`);
             }
 
-        const result = await response.json();
-        if (result.success) {
-            alert('Ваш запрос успешно отправлен администратору! Вы получите уведомление в Telegram о решении.');
-            requestButton.textContent = 'Отправлено!';
-        } else {
-            throw new Error(result.message || 'Произошла ошибка при отправке запроса.');
+            const result = await response.json();
+            if (result.success) {
+                alert('Ваш запрос успешно отправлен администратору! Вы получите уведомление в Telegram о решении.');
+                requestButton.textContent = 'Отправлено!';
+                // Кнопка остается неактивной, доступ НЕ предоставляется
+            } else {
+                throw new Error(result.message || 'Произошла неизвестная ошибка при отправке запроса.');
+            }
+
+        } catch (error) {
+            console.error('Failed to send access request:', error);
+            alert(`Ошибка: ${error.message}`);
+            requestButton.disabled = false; // Позволяем попробовать еще раз
+            requestButton.textContent = originalText;
         }
-
-    } catch (error) {
-        console.error('Failed to send access request:', error);
-        alert(`Ошибка: ${error.message}`);
-        requestButton.disabled = false;
-        requestButton.textContent = originalText;
     }
-}
-
     
     function showAccessDeniedScreen() {
-    document.getElementById('main-content').style.display = 'none';
-    document.getElementById('access-denied').classList.remove('hidden');
-
-    const requestButton = document.getElementById('requestAccessButton');
-    requestButton.href = '#';
-    requestButton.removeEventListener('click', handleRequestAccessClick);
-    requestButton.addEventListener('click', handleRequestAccessClick);
-}
-
+        document.getElementById('main-content').style.display = 'none';
+        document.getElementById('access-denied').classList.remove('hidden');
+        
+        const requestButton = document.getElementById('requestAccessButton');
+        requestButton.href = '#';
+        requestButton.removeEventListener('click', handleRequestAccessClick);
+        requestButton.addEventListener('click', handleRequestAccessClick);
+    }
 
     function showAppContent() {
         document.getElementById('main-content').style.display = 'flex';
@@ -246,97 +183,45 @@ async function handleRequestAccessClick() {
     }
 
     async function checkTelegramAccess(initData) {
-        try {
-            const response = await fetch(SERVERLESS_FUNCTION_URL, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ initData: initData })
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
-            }
-            const data = await response.json();
-            return data.isAllowed;
-        } catch (error) {
-            console.error("Access check failed:", error);
-            throw error;
+        const response = await fetch(CHECK_ACCESS_URL, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initData })
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
         }
+        const data = await response.json();
+        return data.isAllowed;
     }
 
+    // --- ЗАГРУЗКА БАЗЫ ДАННЫХ (без изменений) ---
     async function loadMoreVerbs(isNewSearch = false) {
-        if (!db || isLoading) return;
-        isLoading = true;
-        if (isNewSearch) currentOffset = 0;
-        let stmt;
-        const normalizedTerm = normalizeForSearch(currentSearchTerm);
-        const trimmedTerm = currentSearchTerm.trim();
-        if (trimmedTerm && !isNaN(trimmedTerm)) {
-             stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`);
-             stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
-        } else if (normalizedTerm) {
-            stmt = db.prepare(`SELECT * FROM verbs WHERE infinitive_norm LIKE :term OR translation_norm LIKE :term OR present_3rd_norm LIKE :term OR past_3rd_norm LIKE :term OR question_norm LIKE :term LIMIT :limit OFFSET :offset`);
-            stmt.bind({ ':term': `%${normalizedTerm}%`, ':limit': PAGE_SIZE, ':offset': currentOffset });
-        } else {
-            stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
-            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
-        }
-        const results = [];
-        while(stmt.step()) { results.push(stmt.getAsObject()); }
-        stmt.free();
-        renderTable(results, !isNewSearch);
-        currentOffset += results.length;
-        isLoading = false;
+        if (!db || isLoading) return; isLoading = true; if (isNewSearch) currentOffset = 0;
+        let stmt; const normalizedTerm = normalizeForSearch(currentSearchTerm); const trimmedTerm = currentSearchTerm.trim();
+        if (trimmedTerm && !isNaN(trimmedTerm)) { stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset }); } else if (normalizedTerm) { stmt = db.prepare(`SELECT * FROM verbs WHERE infinitive_norm LIKE :term OR translation_norm LIKE :term OR present_3rd_norm LIKE :term OR past_3rd_norm LIKE :term OR question_norm LIKE :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': `%${normalizedTerm}%`, ':limit': PAGE_SIZE, ':offset': currentOffset }); } else { stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset"); stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset }); }
+        const results = []; while(stmt.step()) { results.push(stmt.getAsObject()); } stmt.free(); renderTable(results, !isNewSearch); currentOffset += results.length; isLoading = false;
     }
-
     async function main() {
         try {
-            const SQL = await initSqlJs({
-                // Говорим sql.js, где найти его .wasm файл
-                locateFile: file => `https://sql.js.org/dist/${file}`
-            });
-            
-            // Загружаем нашу базу данных с нашего репозитория на GitHub
+            const SQL = await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` });
             const response = await fetch("./verbs.sqlite");
-            if (!response.ok) {
-                throw new Error(`Database fetch failed: ${response.status} ${response.statusText}`);
-            }
-            
-            const dbFile = await response.arrayBuffer();
-            db = new SQL.Database(new Uint8Array(dbFile));
-            
-            const countResult = db.exec("SELECT COUNT(*) FROM verbs");
-            totalVerbsCount = countResult[0].values[0][0];
-            searchInput.disabled = false;
-            searchInput.placeholder = "Search any form...";
-            await loadMoreVerbs(true);
-            let debounceTimer;
-            searchInput.addEventListener('input', (e) => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                    currentSearchTerm = e.target.value;
-                    loadMoreVerbs(true);
-                }, 300);
-            });
-            tableWrapper.addEventListener('scroll', () => {
-                if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) {
-                    loadMoreVerbs(false);
-                }
-            });
-            modalCloseButton.addEventListener('click', closeModal);
-            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
-        } catch (err) {
-            console.error("Initialization error (main function):", err);
-            showCriticalError(`Failed to load database. Error: ${err.message}`);
-        }
+            if (!response.ok) { throw new Error(`Database fetch failed: ${response.status} ${response.statusText}`); }
+            const dbFile = await response.arrayBuffer(); db = new SQL.Database(new Uint8Array(dbFile));
+            const countResult = db.exec("SELECT COUNT(*) FROM verbs"); totalVerbsCount = countResult[0].values[0][0];
+            searchInput.disabled = false; searchInput.placeholder = "Search any form..."; await loadMoreVerbs(true);
+            let debounceTimer; searchInput.addEventListener('input', (e) => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => { currentSearchTerm = e.target.value; loadMoreVerbs(true); }, 300); });
+            tableWrapper.addEventListener('scroll', () => { if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) { loadMoreVerbs(false); } });
+            modalCloseButton.addEventListener('click', closeModal); modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); }); document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+        } catch (err) { console.error("Initialization error (main function):", err); showCriticalError(`Failed to load database. Error: ${err.message}`); }
     }
-
+    
+    // --- ГЛАВНАЯ ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ ---
     async function initializeApp() {
         try {
             if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
-                console.log("Not a valid Telegram environment. Providing free access.");
-                showAppContent();
-                await main();
+                showAccessDeniedScreen(); // Вне Telegram доступ всегда запрещен
+                alert("Это приложение предназначено для запуска внутри Telegram.");
                 return;
             }
 
