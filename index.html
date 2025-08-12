@@ -286,13 +286,13 @@ document.addEventListener('DOMContentLoaded', () => {
             tg.onEvent('themeChanged', applyTheme);
             applyTheme();
 
-            // --- ИСПРАВЛЕНИЕ: Разбиваем вызовы на отдельные строки ---
-            const mainButton = tg.MainButton;
-            mainButton.setText('Закрыть');
-            mainButton.setTextColor('#ffffff');
-            mainButton.setColor('#0ea5e9');
-            mainButton.show();
-            
+            // --- ИСПРАВЛЕНИЕ: Используем правильный метод setParams ---
+            tg.MainButton.setParams({
+                text: 'Закрыть',
+                color: '#0ea5e9',
+                text_color: '#ffffff',
+                is_visible: true
+            });
             tg.onEvent('mainButtonClicked', () => tg.close());
             
             const backButton = tg.BackButton;
