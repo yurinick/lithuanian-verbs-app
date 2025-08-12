@@ -190,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showAccessDeniedScreen() {
         document.getElementById('main-content').style.display = 'none';
         document.getElementById('access-denied').classList.remove('hidden');
-        document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?start=request_access`;
+        document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?text=/request_access`;
     }
 
     function showAppContent() {
