@@ -18,7 +18,19 @@
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased">
 
-<div id="main-content" class="mx-auto max-w-7xl flex flex-col h-screen">
+<div id="access-denied" class="hidden fixed inset-0 bg-gray-100 dark:bg-gray-900 flex items-center justify-center z-50 text-center p-4">
+    <div>
+        <p class="text-2xl font-bold text-red-600 dark:text-red-500">Доступ запрещен</p>
+        <p class="mt-2 text-gray-600 dark:text-gray-400">
+            Чтобы получить доступ, пожалуйста, отправьте запрос через Telegram-бота.
+        </p>
+        <a id="requestAccessButton" href="#" target="_blank" class="mt-4 inline-block bg-sky-600 text-white font-bold py-2 px-4 rounded hover:bg-sky-700 transition">
+            Отправить запрос
+        </a>
+    </div>
+</div>
+
+<div id="main-content" class="mx-auto max-w-7xl flex-flex-col h-screen">
   <header class="p-4 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
     <h1 class="text-xl sm:text-2xl font-bold text-sky-700 dark:text-sky-300 text-center">
       Lithuanian Verbs Search
@@ -54,15 +66,11 @@
 <script src="./sql-wasm.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // ==========================================================
-    // === КОНФИГУРАЦИЯ (НУЖНО БУДЕТ ЗАПОЛНИТЬ) ===
-    // ==========================================================
-    const SERVERLESS_FUNCTION_URL = "https://verbs-api-seven.vercel.app/api/check-access"; // <-- ВАШ URL
-    const BOT_USERNAME = "@lithuanian_verbs_bot"; // <-- ИМЯ ВАШЕГО БОТА
+    // === КОНФИГУРАЦИЯ ===
+    const SERVERLESS_FUNCTION_URL = "https://verbs-api-seven.vercel.app/api/check-access";
+    const BOT_USERNAME = "yurinick_bot"; // Пример, замените на ваш
 
-    // ==========================================================
-    // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И DOM-ЭЛЕМЕНТЫ ===
-    // ==========================================================
+    // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
     let db;
     let totalVerbsCount = 0;
     const PAGE_SIZE = 100;
@@ -71,6 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSearchTerm = "";
 
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
+    
+    // === DOM-ЭЛЕМЕНТЫ ===
     const searchInput = document.getElementById('searchInput');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
@@ -82,9 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalCloseButton = document.getElementById('modal-close-button');
     const tableWrapper = document.getElementById('table-wrapper');
 
-    // ==========================================================
     // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-    // ==========================================================
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const normalizeForMatch = (s) => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const getPreferredForm = (formsArray) => {
@@ -93,9 +101,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return formWithDiacritics || formsArray[0];
     };
 
-    // ==========================================================
-    // === ФУНКЦИИ РЕНДЕРИНГА (ОСНОВНАЯ ТАБЛИЦА И МОДАЛЬНОЕ ОКНО) ===
-    // ==========================================================
+    // === ФУНКЦИИ РЕНДЕРИНГА ===
+    function renderTable(verbs, append = false) { /* ... Тело функции без изменений ... */ }
+    function showModalForVerb(verb) { /* ... Тело функции без изменений ... */ }
+    function closeModal() { modalOverlay.classList.add('hidden'); }
+
+    // Вставляем полные тела функций renderTable и showModalForVerb, чтобы избежать ошибок
     function renderTable(verbs, append = false) {
         if (!append) {
             const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод'];
@@ -109,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tableHead.innerHTML = headerHTML;
             tableBody.innerHTML = '';
         }
+        
         verbs.forEach(verb => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
@@ -120,8 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let rowHTML = '';
             db_keys.forEach(key => {
                 let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300';
-                if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400';
-                else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
+                 if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400';
+                 else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
                 rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`;
             });
             tr.innerHTML = rowHTML;
@@ -166,85 +178,38 @@ document.addEventListener('DOMContentLoaded', () => {
         modalOverlay.classList.remove('hidden');
     }
 
-    function closeModal() { modalOverlay.classList.add('hidden'); }
-
-    // ==========================================================
-    // === ЛОГИКА АВТОРИЗАЦИИ ===
-    // ==========================================================
+    // === ЛОГИКА АВТОРИЗАЦИИ И ЗАПУСКА ===
     function showAccessDeniedScreen() {
         document.getElementById('main-content').style.display = 'none';
-        const deniedScreen = document.getElementById('access-denied') || document.createElement('div');
-        if(!document.getElementById('access-denied')) {
-            deniedScreen.id = 'access-denied';
-            deniedScreen.className = 'hidden fixed inset-0 bg-gray-100 dark:bg-gray-900 flex items-center justify-center z-50 text-center p-4';
-            deniedScreen.innerHTML = `
-                <div>
-                    <p class="text-2xl font-bold text-red-600 dark:text-red-500">Доступ запрещен</p>
-                    <p class="mt-2 text-gray-600 dark:text-gray-400">Чтобы получить доступ, отправьте запрос через Telegram-бота.</p>
-                    <a id="requestAccessButton" href="#" target="_blank" class="mt-4 inline-block bg-sky-600 text-white font-bold py-2 px-4 rounded hover:bg-sky-700 transition">Отправить запрос</a>
-                </div>`;
-            document.body.appendChild(deniedScreen);
-        }
-        deniedScreen.classList.remove('hidden');
+        document.getElementById('access-denied').classList.remove('hidden');
         document.getElementById('requestAccessButton').href = `https://t.me/${BOT_USERNAME}?start=request_access`;
     }
 
     function showAppContent() {
         document.getElementById('main-content').style.display = 'flex';
-        const deniedScreen = document.getElementById('access-denied');
-        if(deniedScreen) deniedScreen.classList.add('hidden');
+        document.getElementById('access-denied').classList.add('hidden');
     }
 
     async function checkTelegramAccess(initData) {
-        console.log("Отправляю на сервер initData:", initData);
+        console.log("LOG 3: Entering checkTelegramAccess with initData length:", initData.length);
         try {
+            console.log("LOG 4: Attempting to fetch:", SERVERLESS_FUNCTION_URL);
             const response = await fetch(SERVERLESS_FUNCTION_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ initData: initData })
             });
+            console.log("LOG 5: Fetch response status:", response.status);
             if (!response.ok) return false;
             const data = await response.json();
+            console.log("LOG 6: Response from server:", data);
             return data.isAllowed;
         } catch (error) {
-            console.error("Access check failed:", error);
+            console.error("CRITICAL: fetch request itself failed:", error);
             return false;
         }
     }
 
-    // ==========================================================
-    // === ЛОГИКА РАБОТЫ С БД ===
-    // ==========================================================
-    async function loadMoreVerbs(isNewSearch = false) {
-        if (!db || isLoading) return;
-        isLoading = true;
-        if (isNewSearch) currentOffset = 0;
-        let stmt;
-        const normalizedTerm = normalizeForSearch(currentSearchTerm);
-        const trimmedTerm = currentSearchTerm.trim();
-
-        if (trimmedTerm && !isNaN(trimmedTerm)) {
-             stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`);
-             stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
-        } else if (normalizedTerm) {
-            stmt = db.prepare(`SELECT * FROM verbs WHERE infinitive_norm LIKE :term OR translation_norm LIKE :term OR present_3rd_norm LIKE :term OR past_3rd_norm LIKE :term OR question_norm LIKE :term LIMIT :limit OFFSET :offset`);
-            stmt.bind({ ':term': `%${normalizedTerm}%`, ':limit': PAGE_SIZE, ':offset': currentOffset });
-        } else {
-            stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
-            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
-        }
-        
-        const results = [];
-        while(stmt.step()) { results.push(stmt.getAsObject()); }
-        stmt.free();
-        renderTable(results, !isNewSearch);
-        currentOffset += results.length;
-        isLoading = false;
-    }
-
-    // ==========================================================
-    // === ГЛАВНАЯ ЛОГИКА ЗАПУСКА ПРИЛОЖЕНИЯ ===
-    // ==========================================================
     async function main() {
         try {
             const SQL = await initSqlJs({ locateFile: file => `./${file}` });
@@ -279,9 +244,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function initializeApp() {
+        console.log("LOG 1: initializeApp started.");
         try {
             const tg = window.Telegram.WebApp;
+            tg.ready();
+            const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
+            tg.onEvent('themeChanged', applyTheme);
+            applyTheme();
+            tg.MainButton.setText('Закрыть').setTextColor('#ffffff').setColor('#0ea5e9').show();
+            tg.onEvent('mainButtonClicked', () => tg.close());
+
             if (tg.initData) {
+                console.log("LOG 2: Telegram environment detected. initData is present.");
                 const isAllowed = await checkTelegramAccess(tg.initData);
                 if (isAllowed) {
                     showAppContent();
@@ -290,11 +264,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     showAccessDeniedScreen();
                 }
             } else {
+                console.log("Not in Telegram or no initData. Providing free access.");
                 showAppContent();
                 main();
             }
         } catch (e) {
-            console.log("Not in Telegram environment, providing free access.");
+            console.error("Error in initializeApp:", e);
             showAppContent();
             main();
         }
@@ -304,15 +279,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body>
-<div id="access-denied" class="hidden fixed inset-0 bg-gray-100 dark:bg-gray-900 flex items-center justify-center z-50 text-center p-4">
-    <div>
-        <p class="text-2xl font-bold text-red-600 dark:text-red-500">Доступ запрещен</p>
-        <p class="mt-2 text-gray-600 dark:text-gray-400">
-            Чтобы получить доступ, пожалуйста, отправьте запрос через Telegram-бота.
-        </p>
-        <a id="requestAccessButton" href="#" target="_blank" class="mt-4 inline-block bg-sky-600 text-white font-bold py-2 px-4 rounded hover:bg-sky-700 transition">
-            Отправить запрос
-        </a>
-    </div>
-</div>
 </html>
