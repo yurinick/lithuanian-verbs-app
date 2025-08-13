@@ -43,9 +43,17 @@
     <div class="mt-4 relative">
       <input type="text" id="searchInput" placeholder="Загрузка базы..." disabled class="w-full p-3 pl-10 text-base border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 transition-all" />
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
-    </div>
-  </header>
 
+      <!-- ДОБАВЛЕННАЯ КНОПКА "X" -->
+  <button id="clearSearchButton" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2 p-1 cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  </button>
+
+    </div>
+
+  </header>
   <div class="p-4 flex-grow flex flex-col overflow-hidden">
     <div id="table-wrapper" class="overflow-y-auto flex-grow bg-white dark:bg-gray-800 rounded-lg shadow-md">
         <table class="min-w-full text-sm">
@@ -85,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // === DOM-ЭЛЕМЕНТЫ ===
     const searchInput = document.getElementById('searchInput');
+    const clearSearchButton = document.getElementById('clearSearchButton');
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
     const noResultsMessage = document.getElementById('no-results-message');
@@ -263,7 +272,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const dbFile = await response.arrayBuffer(); db = new SQL.Database(new Uint8Array(dbFile));
             const countResult = db.exec("SELECT COUNT(*) FROM verbs"); totalVerbsCount = countResult[0].values[0][0];
             searchInput.disabled = false; searchInput.placeholder = "Search any form..."; await loadMoreVerbs(true);
-            let debounceTimer; searchInput.addEventListener('input', (e) => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => { currentSearchTerm = e.target.value; loadMoreVerbs(true); }, 300); });
+            let debounceTimer; searchInput.addEventListener('input', (e) => { 
+                            // Показываем или скрываем кнопку "X" в зависимости от наличия текста
+                if (e.target.value.length > 0) {
+                    clearSearchButton.classList.remove('hidden');
+                } else {
+                    clearSearchButton.classList.add('hidden');
+                }
+                clearTimeout(debounceTimer); debounceTimer = setTimeout(() => { currentSearchTerm = e.target.value; loadMoreVerbs(true); }, 300); 
+            });
+                // Обработчик для кнопки "X": очищает поле и сбрасывает поиск
+clearSearchButton.addEventListener('click', () => {
+    searchInput.value = ''; // Очищаем значение поля
+    currentSearchTerm = ''; // Очищаем терм для поиска
+    clearSearchButton.classList.add('hidden'); // Сразу скрываем кнопку
+    loadMoreVerbs(true); // Загружаем полный список
+    searchInput.focus(); // Возвращаем фокус в поле ввода для удобства
+});
             tableWrapper.addEventListener('scroll', () => { if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) { loadMoreVerbs(false); } });
             modalCloseButton.addEventListener('click', closeModal); modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); }); document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
         } catch (err) { console.error("Initialization error (main function):", err); showCriticalError(`Failed to load database. Error: ${err.message}`); }
