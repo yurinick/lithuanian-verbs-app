@@ -233,7 +233,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!db || isLoading) return; isLoading = true; if (isNewSearch) currentOffset = 0;
         let stmt; const normalizedTerm = normalizeForSearch(currentSearchTerm); const trimmedTerm = currentSearchTerm.trim();
         if (trimmedTerm && !isNaN(trimmedTerm)) { stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset }); 
-            } else if (normalizedTerm) {const sql = `
+            } else if (normalizedTerm) {
+            const searchRegex = createSearchRegex(normalizedTerm);    
+            const sql = `
         SELECT 
             *,
             CASE
@@ -258,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
     stmt.bind({
         ':regex':      searchRegex,              // Наш новый шаблон RegEx
         ':term_start': `${normalizedTerm}%`,      // Для поиска в начале слова
-        ':term_any':   `%${normalizedTerm}%`,      // Для поиска в любом месте
         ':limit':      PAGE_SIZE,
         ':offset':     currentOffset
     });
