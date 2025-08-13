@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
              if (verb.is_priority === 1) {
         // Используем классы TailwindCSS для фиолетовой рамки
         tr.classList.add('border-l-4', 'border-violet-500');
+             }
         // Для подсветки фона можно использовать: tr.classList.add('bg-violet-100', 'dark:bg-violet-900/50');
              if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb));
              
