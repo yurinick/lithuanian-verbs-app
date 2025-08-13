@@ -106,7 +106,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // === ФУНКЦИИ РЕНДЕРИНГА (без изменений) ===
     function renderTable(verbs, append = false) {
         if (!append) { const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод']; let headerHTML = '<tr>'; headers.forEach(h => { let classes = 'py-3 px-4 text-left text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase'; if (['№', 'P', '#'].includes(h)) classes += ' w-[50px] text-center px-1'; headerHTML += `<th class="${classes}">${h}</th>`; }); headerHTML += '</tr>'; tableHead.innerHTML = headerHTML; tableBody.innerHTML = ''; }
-        verbs.forEach(verb => { const tr = document.createElement('tr'); tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700'; if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb)); } const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation']; let rowHTML = ''; db_keys.forEach(key => { let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300'; if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400'; else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200'; rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`; }); tr.innerHTML = rowHTML; tableBody.appendChild(tr); });
+        verbs.forEach(verb => {
+             const tr = document.createElement('tr');
+             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
+             if (verb.is_priority === 1) {
+        // Используем классы TailwindCSS для фиолетовой рамки
+        tr.classList.add('border-l-4', 'border-violet-500');
+        // Для подсветки фона можно использовать: tr.classList.add('bg-violet-100', 'dark:bg-violet-900/50');
+             if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb));
+             
+             } const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation']; let rowHTML = ''; db_keys.forEach(key => { let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300'; if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400'; else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200'; rowHTML += `<td class="${classes}">${verb[key] || ''}</td>`; }); tr.innerHTML = rowHTML; tableBody.appendChild(tr); });
         noResultsMessage.classList.toggle('hidden', tableBody.children.length === 0); recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
     function showModalForVerb(verb) {
@@ -199,7 +208,40 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadMoreVerbs(isNewSearch = false) {
         if (!db || isLoading) return; isLoading = true; if (isNewSearch) currentOffset = 0;
         let stmt; const normalizedTerm = normalizeForSearch(currentSearchTerm); const trimmedTerm = currentSearchTerm.trim();
-        if (trimmedTerm && !isNaN(trimmedTerm)) { stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset }); } else if (normalizedTerm) { stmt = db.prepare(`SELECT * FROM verbs WHERE infinitive_norm LIKE :term OR translation_norm LIKE :term OR present_3rd_norm LIKE :term OR past_3rd_norm LIKE :term OR question_norm LIKE :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': `%${normalizedTerm}%`, ':limit': PAGE_SIZE, ':offset': currentOffset }); } else { stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset"); stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset }); }
+        if (trimmedTerm && !isNaN(trimmedTerm)) { stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset }); 
+            } else if (normalizedTerm) {const sql = `
+        SELECT 
+            *,
+            -- Создаем флаг приоритета: 1, если есть совпадение с началом слова, иначе 0
+            CASE
+                WHEN infinitive_norm LIKE :term_start THEN 1
+                WHEN translation_norm LIKE :term_start THEN 1
+                WHEN present_3rd_norm LIKE :term_start THEN 1
+                WHEN past_3rd_norm LIKE :term_start THEN 1
+                WHEN question_norm LIKE :term_start THEN 1
+                ELSE 0
+            END AS is_priority
+        FROM verbs 
+        WHERE 
+            infinitive_norm LIKE :term_any OR 
+            translation_norm LIKE :term_any OR 
+            present_3rd_norm LIKE :term_any OR 
+            past_3rd_norm LIKE :term_any OR 
+            question_norm LIKE :term_any
+        -- Сначала сортируем по флагу приоритета (сначала 1, потом 0), затем по id_num
+        ORDER BY is_priority DESC, id_num
+        LIMIT :limit OFFSET :offset
+    `;
+    stmt = db.prepare(sql);
+    stmt.bind({
+        ':term_start': `${normalizedTerm}%`,      // Для поиска в начале слова
+        ':term_any':   `%${normalizedTerm}%`,      // Для поиска в любом месте
+        ':limit':      PAGE_SIZE,
+        ':offset':     currentOffset
+    });
+            } else { stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
+            
+            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset }); }
         const results = []; while(stmt.step()) { results.push(stmt.getAsObject()); } stmt.free(); renderTable(results, !isNewSearch); currentOffset += results.length; isLoading = false;
     }
     async function main() {
