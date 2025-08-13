@@ -110,10 +110,18 @@ document.addEventListener('DOMContentLoaded', () => {
              const tr = document.createElement('tr');
              tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
              if (verb.is_priority === 1) {
-        // Используем классы TailwindCSS для фиолетовой рамки
-        tr.classList.add('border-l-4', 'border-violet-500');
-         // И для подсветки фона
-        tr.classList.add('bg-violet-100', 'dark:bg-violet-900/50');
+        // Убираем старую "серую" зебру, чтобы она не мешала
+    tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
+
+    // Добавляем рамку и создаем нашу собственную "фиолетовую зебру"
+    tr.classList.add(
+        'border-l-4',
+        'border-violet-500',
+        'bg-violet-100',                               // Фон для нечетных строк (светлая тема)
+        'dark:bg-violet-900/40',                       // Фон для нечетных строк (темная тема)
+        'even:bg-violet-200/80',                       // Фон для ЧЕТНЫХ строк (светлая тема)
+        'dark:even:bg-violet-800/40'                   // Фон для ЧЕТНЫХ строк (темная тема)
+    );
              }
         // Для подсветки фона можно использовать: tr.classList.add('bg-violet-100', 'dark:bg-violet-900/50');
              if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb));
