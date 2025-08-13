@@ -106,6 +106,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
+    const createSearchRegex = (term) => {
+    // Заменяем каждую букву 'i' или 'y' на шаблон [iy], который означает "любой из этих символов"
+    return term.replace(/[iy]/g, '[iy]');
+};
     const getPreferredForm = (formsArray) => {
         if (!formsArray || formsArray.length === 0) return '-';
         const formWithDiacritics = formsArray.find(form => form !== form.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
@@ -232,7 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (normalizedTerm) {const sql = `
         SELECT 
             *,
-            -- Создаем флаг приоритета: 1, если есть совпадение с началом слова, иначе 0
             CASE
                 WHEN infinitive_norm LIKE :term_start THEN 1
                 WHEN translation_norm LIKE :term_start THEN 1
@@ -243,17 +246,17 @@ document.addEventListener('DOMContentLoaded', () => {
             END AS is_priority
         FROM verbs 
         WHERE 
-            infinitive_norm LIKE :term_any OR 
-            translation_norm LIKE :term_any OR 
-            present_3rd_norm LIKE :term_any OR 
-            past_3rd_norm LIKE :term_any OR 
-            question_norm LIKE :term_any
-        -- Сначала сортируем по флагу приоритета (сначала 1, потом 0), затем по id_num
+            -- Используем новый оператор REGEXP для основного поиска
+            infinitive_norm REGEXP :regex OR 
+            translation_norm REGEXP :regex OR 
+            present_3rd_norm REGEXP :regex OR 
+            past_3rd_norm REGEXP :regex OR 
+            question_norm REGEXP :regex
         ORDER BY is_priority DESC, id_num
-        LIMIT :limit OFFSET :offset
-    `;
+        LIMIT :limit OFFSET :offset`;
     stmt = db.prepare(sql);
     stmt.bind({
+        ':regex':      searchRegex,              // Наш новый шаблон RegEx
         ':term_start': `${normalizedTerm}%`,      // Для поиска в начале слова
         ':term_any':   `%${normalizedTerm}%`,      // Для поиска в любом месте
         ':limit':      PAGE_SIZE,
@@ -269,7 +272,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const SQL = await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` });
             const response = await fetch("./verbs.sqlite");
             if (!response.ok) { throw new Error(`Database fetch failed: ${response.status} ${response.statusText}`); }
-            const dbFile = await response.arrayBuffer(); db = new SQL.Database(new Uint8Array(dbFile));
+            const dbFile = await response.arrayBuffer();
+            db = new SQL.Database(new Uint8Array(dbFile));
+            // Регистрируем функцию REGEXP, чтобы ее можно было использовать в SQL-запросах
+        db.create_function("REGEXP", (pattern, text) => new RegExp(pattern, "i").test(text));
             const countResult = db.exec("SELECT COUNT(*) FROM verbs"); totalVerbsCount = countResult[0].values[0][0];
             searchInput.disabled = false; searchInput.placeholder = "Search any form..."; await loadMoreVerbs(true);
             let debounceTimer; searchInput.addEventListener('input', (e) => { 
