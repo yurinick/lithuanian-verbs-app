@@ -112,8 +112,12 @@ document.addEventListener('DOMContentLoaded', () => {
 };
     const getPreferredForm = (formsArray) => {
     if (!formsArray || formsArray.length === 0) return '-';
-    // Ищем формы с ударением (диакритическими знаками)
-    const stressedForms = formsArray.filter(form => form.normalize('NFD').replace(/[\u0300-\u036f]/g, '') !== form);
+
+    // Проверяем наличие только знаков ударения (акут, гравис, тильда),
+        // игнорируя другие диакритики литовского алфавита (как в ą, č, ę, ė, į, š, ų, ū, ž).
+        const hasStress = (s) => /[\u0300\u0301\u0303]/.test(s.normalize('NFD'));
+        
+        const stressedForms = formsArray.filter(hasStress);
 
         // Если найдены формы с ударением, показываем только их.
         // В противном случае, показываем исходные формы (без ударения).
