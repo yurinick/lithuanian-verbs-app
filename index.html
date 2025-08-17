@@ -112,8 +112,14 @@ document.addEventListener('DOMContentLoaded', () => {
 };
     const getPreferredForm = (formsArray) => {
     if (!formsArray || formsArray.length === 0) return '-';
-    // Просто объединяем все формы через слеш, чтобы показать все варианты
-    return formsArray.join(' / ');
+    // Ищем формы с ударением (диакритическими знаками)
+    const stressedForms = formsArray.filter(form => form.normalize('NFD').replace(/[\u0300-\u036f]/g, '') !== form);
+
+        // Если найдены формы с ударением, показываем только их.
+        // В противном случае, показываем исходные формы (без ударения).
+        const formsToShow = stressedForms.length > 0 ? stressedForms : formsArray;
+        
+        return formsToShow.join(' / ');
     };
 
     // === ФУНКЦИИ РЕНДЕРИНГА (без изменений) ===
