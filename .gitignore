@@ -1,1 +1,24 @@
-.DS_Storenode_modules/
+# Папки зависимостей и рабочие папки
+node_modules/
+project_merging/
+
+# Рабочие скрипты и утилиты
+build_cache_from_db.js
+conjugations_updater.js
+find_conflicts.js
+find_duplicate_accents.js
+industrial_accent_updater.js
+
+# Файлы кэша и отчетов
+accent_cache.json
+conflicts_report.txt
+duplicate_accents_report.txt
+
+# Node.js файлы
+package.json
+package-lock.json
+
+# Системные файлы macOS
+.DS_Store
+*/.DS_Store
+**/.DS_Store
