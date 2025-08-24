@@ -149,7 +149,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Для подсветки фона можно использовать: tr.classList.add('bg-violet-100', 'dark:bg-violet-900/50');
              if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb));
              
-             } const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation']; let rowHTML = ''; db_keys.forEach(key => { let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300'; if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400'; else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200'; 
+             } const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation']; let rowHTML = '';
+             db_keys.forEach(key => { let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300';
+             if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400';
+             else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
+             if (key === 'translation') {
+        classes += ' whitespace-normal break-words';
+    }
              let cellContent = verb[key] || '';
 // Если в ячейке строка с запятой, берем только первую часть
 if (typeof cellContent === 'string' && cellContent.includes(',')) {
