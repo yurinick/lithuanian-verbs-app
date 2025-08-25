@@ -391,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) { throw new Error(`Database fetch failed: ${response.status} ${response.statusText}`); }
             const dbFile = await response.arrayBuffer();
             db = new SQL.Database(new Uint8Array(dbFile));
-            db.create_function("REGEXP", (pattern, text) => new RegExp(pattern, "i").test(text || ''));
+            db.create_function("REGEXP", (pattern, text) => +new RegExp(pattern, "i").test(text || ''));
             const countResult = db.exec("SELECT COUNT(*) FROM verbs");
             totalVerbsCount = countResult[0].values[0][0];
             searchInput.disabled = false;
