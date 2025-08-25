@@ -44,7 +44,6 @@
       <input type="text" id="searchInput" placeholder="Загрузка базы..." disabled class="w-full p-3 pl-10 text-base border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 transition-all" />
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
 
-      <!-- ДОБАВЛЕННАЯ КНОПКА "X" -->
   <button id="clearSearchButton" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2 p-1 cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
       <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -61,6 +60,7 @@
             <tbody id="table-body"></tbody>
         </table>
         <div id="no-results-message" class="hidden text-center p-8 text-gray-500">Ничего не найдено</div>
+        <div id="loading-advanced-search-message" class="hidden text-center p-8 text-gray-500">Подождите немного, идет поиск по всем формам...</div>
     </div>
     <p id="record-count" class="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center flex-shrink-0"></p>
   </div>
@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentOffset = 0;
     let isLoading = false;
     let currentSearchTerm = "";
-    let isConjugationIndexReady = false; // Флаг готовности расширенного поиска
+    let isConjugationIndexReady = false;
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
 
     // === DOM-ЭЛЕМЕНТЫ ===
@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableHead = document.getElementById('table-head');
     const tableBody = document.getElementById('table-body');
     const noResultsMessage = document.getElementById('no-results-message');
+    const loadingAdvancedSearchMessage = document.getElementById('loading-advanced-search-message');
     const recordCount = document.getElementById('record-count');
     const modalOverlay = document.getElementById('modal-overlay');
     const modalTitle = document.getElementById('modal-title');
@@ -109,18 +110,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const createSearchRegex = (term) => {
         let result = term.replace(/[iy]/g, '[iy]');
-        result = result.replace(/a\[iy\]/g, '(ai|ei)').replace(/e\[iy\]/g, '(ai|ei)');
+        result = result.replace(/a[iy]/g, '(ai|ei)').replace(/e[iy]/g, '(ai|ei)');
         return result;
     };
-    const getPreferredForm = (formsArray) => {
+    const getPreferredForm = (formsArray, termToHighlight = '') => {
         if (!formsArray || formsArray.length === 0) return '-';
         const hasStress = (s) => /[\u0300\u0301\u0303]/.test(s.normalize('NFD'));
         const stressedForms = formsArray.filter(hasStress);
         const formsToShow = stressedForms.length > 0 ? stressedForms : formsArray;
-        return formsToShow.join(' / ');
+
+        const normalizedHighlightTerm = normalizeForSearch(termToHighlight);
+        if (!normalizedHighlightTerm) {
+            return formsToShow.join(' / ');
+        }
+
+        const highlightedForms = formsToShow.map(form => {
+            const normalizedForm = normalizeForSearch(form);
+            if (normalizedForm === normalizedHighlightTerm) {
+                return `<span class="bg-violet-200 dark:bg-violet-700 rounded-md px-1">${form}</span>`;
+            }
+            return form;
+        });
+
+        return highlightedForms.join(' / ');
     };
 
-    // === ФУНКЦИИ РЕНДЕРИНГА (С УЧЕТОМ ПОДСВЕТКИ) ===
+    // === ФУНКЦИИ РЕНДЕРИНГА ===
     function renderTable(verbs, append = false) {
         if (!append) {
             const headerConfig = [
@@ -140,35 +155,24 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             headerHTML += '</tr>';
             tableHead.innerHTML = headerHTML;
-            tableBody.innerHTML = '';
+            if (!append) tableBody.innerHTML = '';
         }
 
         verbs.forEach(verb => {
             const tr = document.createElement('tr');
-            // Базовый стиль + стандартная зебра
             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
 
-            // ПРИМЕНЕНИЕ ПРИОРИТЕТНОЙ ПОДСВЕТКИ
-            // Розовый (высший приоритет): найдено только в спряжениях
-            if (verb.match_type === 1) {
+            if (verb.match_quality == 2) {
                 tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
-                tr.classList.add(
-                    'border-l-4', 'border-pink-500', 'bg-pink-100', 'dark:bg-pink-900/40',
-                    'even:bg-pink-200/80', 'dark:even:bg-pink-800/40'
-                );
-            }
-            // Фиолетовый (второй приоритет): глагол из списка "важных"
-            else if (verb.is_priority === 1) {
+                tr.classList.add('border-l-4', 'border-violet-500', 'bg-violet-100', 'dark:bg-violet-900/40', 'even:bg-violet-200/80', 'dark:even:bg-violet-800/40');
+            } else if (verb.match_quality == 1) {
                 tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
-                tr.classList.add(
-                    'border-l-4', 'border-violet-500', 'bg-violet-100', 'dark:bg-violet-900/40',
-                    'even:bg-violet-200/80', 'dark:even:bg-violet-800/40'
-                );
+                tr.classList.add('border-l-4', 'border-sky-500', 'bg-sky-100', 'dark:bg-sky-900/40', 'even:bg-sky-200/80', 'dark:even:bg-sky-800/40');
             }
 
             if (verb.conjugations) {
                 tr.classList.add('cursor-pointer');
-                tr.addEventListener('click', () => showModalForVerb(verb));
+                tr.addEventListener('click', () => showModalForVerb(verb, currentSearchTerm));
             }
 
             const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
@@ -184,11 +188,21 @@ document.addEventListener('DOMContentLoaded', () => {
             tableBody.appendChild(tr);
         });
 
-        noResultsMessage.classList.toggle('hidden', tableBody.children.length > 0);
+        loadingAdvancedSearchMessage.classList.add('hidden');
+        noResultsMessage.classList.add('hidden');
+
+        if (tableBody.children.length === 0) {
+            if (!isConjugationIndexReady && currentSearchTerm.trim().length > 0) {
+                loadingAdvancedSearchMessage.classList.remove('hidden');
+            } else {
+                noResultsMessage.classList.remove('hidden');
+            }
+        }
+
         recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
 
-    function showModalForVerb(verb) {
+    function showModalForVerb(verb, searchTerm = '') {
         if (!verb.conjugations) return;
         const verbInfo = JSON.parse(verb.conjugations);
         modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`;
@@ -204,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mainTableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`;
             mainTenses.forEach(tense => {
                 const item = tenses[tense] ? tenses[tense][personIndex] : null;
-                const form = item ? getPreferredForm(item.forms) : '-';
+                const form = item ? getPreferredForm(item.forms, searchTerm) : '-';
                 mainTableHTML += `<td class="px-2 py-1">${form}</td>`;
             });
             mainTableHTML += `</tr>`;
@@ -217,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 otherFormsHTML += `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
                 otherFormsHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
                 tenses[tense].forEach(row => {
-                    otherFormsHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`;
+                    otherFormsHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms, searchTerm)}</td></tr>`;
                 });
                 otherFormsHTML += `</tbody></table>`;
             }
@@ -271,18 +285,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- ФОНОВАЯ ИНДЕКСАЦИЯ СПРЯЖЕНИЙ ---
     async function buildConjugationIndex() {
-        console.log("Background indexing started...");
         try {
             db.exec("ALTER TABLE verbs ADD COLUMN all_forms_text TEXT;");
             const updateStmt = db.prepare("UPDATE verbs SET all_forms_text = :forms WHERE id_num = :id");
             const verbsToProcess = db.exec("SELECT id_num, conjugations FROM verbs WHERE conjugations IS NOT NULL AND conjugations != ''");
             if (!verbsToProcess[0]) {
-                console.log("No conjugations to index.");
                 isConjugationIndexReady = true;
                 return;
             }
             const rows = verbsToProcess[0].values;
-            const CHUNK_SIZE = 50; // Обрабатываем по 50 глаголов за раз, чтобы не блокировать UI
+            const CHUNK_SIZE = 50;
             for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
                 const chunk = rows.slice(i, i + CHUNK_SIZE);
                 db.exec("BEGIN TRANSACTION;");
@@ -308,31 +320,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 db.exec("COMMIT;");
-                // Даем браузеру "продохнуть" и обработать другие события
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
             updateStmt.free();
             isConjugationIndexReady = true;
-            console.log("Background indexing complete!");
-            // Меняем стиль поисковой строки, чтобы показать, что поиск стал "продвинутым"
             searchInput.classList.remove('focus:ring-sky-500', 'focus:border-sky-500');
-            searchInput.classList.add('focus:ring-pink-500', 'focus:border-pink-500');
+            searchInput.classList.add('focus:ring-violet-500', 'focus:border-violet-500');
             searchInput.placeholder = "Advanced search enabled...";
+            if (searchInput.value.trim().length > 0) {
+                loadMoreVerbs(true);
+            }
         } catch (err) {
             console.error("Error during background indexing:", err);
-            // Не блокируем приложение, просто расширенный поиск будет недоступен
         }
     }
 
-    // --- ПОИСК И ЗАГРУЗКА ДАННЫХ (С ОТЛАДКОЙ) ---
+    // --- ПОИСК И ЗАГРУЗКА ДАННЫХ ---
     async function loadMoreVerbs(isNewSearch = false) {
-        // --- DEBUG ---
-        console.log(`--- Debugging loadMoreVerbs ---`);
-        console.log(`Search term: '${currentSearchTerm}'`);
-        console.log(`Is new search: ${isNewSearch}`);
-        console.log(`Is conjugation index ready: ${isConjugationIndexReady}`);
-        // --- END DEBUG ---
-
         if (!db || isLoading) return;
         isLoading = true;
         if (isNewSearch) currentOffset = 0;
@@ -341,50 +345,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedTerm = normalizeForSearch(currentSearchTerm);
         const trimmedTerm = currentSearchTerm.trim();
 
-        try { // Оборачиваем в try...catch для отлова любых ошибок
+        try {
             if (trimmedTerm && !isNaN(trimmedTerm)) {
-                const sql = `SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`;
-                console.log("Executing SQL (numeric search):", sql);
-                stmt = db.prepare(sql);
+                stmt = db.prepare(`SELECT *, 0 as match_quality FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`);
                 stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
             } else if (normalizedTerm) {
                 const searchRegex = createSearchRegex(normalizedTerm);
+                const startsWithRegex = `(^|\\s)${searchRegex}`;
+                const wholeWordRegex = `\\b${searchRegex}\\b`;
+                
                 let sql;
+                let params;
+
                 const mainColumnsSearch = `(infinitive_norm REGEXP :regex OR translation_norm REGEXP :regex OR present_3rd_norm REGEXP :regex OR past_3rd_norm REGEXP :regex OR question_norm REGEXP :regex)`;
+                const mainColumnsStartsWithSearch = `(infinitive_norm REGEXP :starts_with_regex OR translation_norm REGEXP :starts_with_regex OR present_3rd_norm REGEXP :starts_with_regex OR past_3rd_norm REGEXP :starts_with_regex OR question_norm REGEXP :starts_with_regex)`;
 
                 if (isConjugationIndexReady) {
-                    sql = `
-                        SELECT *,
-                            CASE
-                                WHEN (all_forms_text REGEXP :regex AND NOT ${mainColumnsSearch}) THEN 1
-                                ELSE 0
-                            END AS match_type
-                        FROM verbs
-                        WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :regex
-                        ORDER BY match_type DESC, is_priority DESC, id_num
-                        LIMIT :limit OFFSET :offset`;
+                    sql = `\n                        SELECT *,\n                            CASE\n                                WHEN (all_forms_text REGEXP :whole_word_regex AND NOT ${mainColumnsSearch}) THEN 2\n                                WHEN ${mainColumnsStartsWithSearch} THEN 1\n                                ELSE 0\n                            END AS match_quality\n                        FROM verbs\n                        WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :whole_word_regex\n                        ORDER BY match_quality DESC, id_num\n                        LIMIT :limit OFFSET :offset`;
+                    params = {
+                        ':regex': searchRegex,
+                        ':starts_with_regex': startsWithRegex,
+                        ':whole_word_regex': wholeWordRegex,
+                        ':limit': PAGE_SIZE,
+                        ':offset': currentOffset
+                    };
                 } else {
-                    sql = `
-                        SELECT *, 0 AS match_type
-                        FROM verbs
-                        WHERE ${mainColumnsSearch}
-                        ORDER BY is_priority DESC, id_num
-                        LIMIT :limit OFFSET :offset`;
+                    sql = `\n                        SELECT *,\n                            CASE WHEN ${mainColumnsStartsWithSearch} THEN 1 ELSE 0 END AS match_quality\n                        FROM verbs\n                        WHERE ${mainColumnsSearch}\n                        ORDER BY match_quality DESC, id_num\n                        LIMIT :limit OFFSET :offset`;
+                    params = {
+                        ':regex': searchRegex,
+                        ':starts_with_regex': startsWithRegex,
+                        ':limit': PAGE_SIZE,
+                        ':offset': currentOffset
+                    };
                 }
-                
-                console.log("Search Regex:", searchRegex);
-                console.log("Executing SQL (text search):", sql);
-
                 stmt = db.prepare(sql);
-                stmt.bind({
-                    ':regex': searchRegex,
-                    ':limit': PAGE_SIZE,
-                    ':offset': currentOffset
-                });
+                stmt.bind(params);
             } else {
-                const sql = "SELECT *, 0 AS match_type FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset";
-                console.log("Executing SQL (no search term):", sql);
-                stmt = db.prepare(sql);
+                stmt = db.prepare("SELECT *, 0 AS match_quality FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
                 stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
             }
 
@@ -392,17 +389,12 @@ document.addEventListener('DOMContentLoaded', () => {
             while (stmt.step()) { results.push(stmt.getAsObject()); }
             stmt.free();
 
-            console.log(`Query finished. Found ${results.length} results.`);
-            if (results.length > 0) {
-                console.log("First result:", results[0]);
-            }
-
             renderTable(results, !isNewSearch);
             currentOffset += results.length;
             isLoading = false;
         } catch (e) {
             console.error("!!! CRITICAL ERROR IN loadMoreVerbs !!!", e);
-            isLoading = false; // Сбрасываем флаг загрузки при ошибке
+            isLoading = false;
         }
     }
 
@@ -421,7 +413,6 @@ document.addEventListener('DOMContentLoaded', () => {
             searchInput.placeholder = "Search any form...";
             await loadMoreVerbs(true);
 
-            // ЗАПУСК ФОНОВОЙ ИНДЕКСАЦИИ (не дожидаясь завершения)
             buildConjugationIndex();
 
             let debounceTimer;
@@ -454,26 +445,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ (С РЕЖИМОМ ОТЛАДКИ) ---
+    // --- ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ---
     async function initializeApp() {
         try {
-            // Если мы не в Telegram, включаем режим отладки
+            // Возвращаем строгую проверку на запуск вне Telegram
             if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
-                console.warn("--- RUNNING IN DEBUG MODE (OUTSIDE TELEGRAM) ---");
-                // Создаем фейковый объект Telegram, чтобы избежать ошибок
-                window.Telegram = {
-                    WebApp: {
-                        ready: () => {},
-                        onEvent: () => {},
-                        MainButton: { setParams: () => {} },
-                        colorScheme: 'light',
-                        initData: ''
-                    }
-                };
-                // Пропускаем проверку доступа и сразу запускаем приложение
-                showAppContent();
-                await main();
-                return; // Завершаем выполнение, чтобы не запускать логику для Telegram
+                showAccessDeniedScreen();
+                alert("Это приложение предназначено для запуска внутри Telegram.");
+                return;
             }
 
             // Стандартная логика для запуска внутри Telegram
@@ -484,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
             applyTheme();
             tg.MainButton.setParams({ text: 'Закрыть', color: '#0ea5e9', text_color: '#ffffff', is_visible: true });
             tg.onEvent('mainButtonClicked', () => tg.close());
+            
             if (tg.initData) {
                 const isAllowed = await checkTelegramAccess(tg.initData);
                 if (isAllowed) {
