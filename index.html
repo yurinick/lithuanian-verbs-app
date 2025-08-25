@@ -324,8 +324,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- ПОИСК И ЗАГРУЗКА ДАННЫХ ---
+    // --- ПОИСК И ЗАГРУЗКА ДАННЫХ (С ОТЛАДКОЙ) ---
     async function loadMoreVerbs(isNewSearch = false) {
+        // --- DEBUG ---
+        console.log(`--- Debugging loadMoreVerbs ---`);
+        console.log(`Search term: '${currentSearchTerm}'`);
+        console.log(`Is new search: ${isNewSearch}`);
+        console.log(`Is conjugation index ready: ${isConjugationIndexReady}`);
+        // --- END DEBUG ---
+
         if (!db || isLoading) return;
         isLoading = true;
         if (isNewSearch) currentOffset = 0;
@@ -334,53 +341,69 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedTerm = normalizeForSearch(currentSearchTerm);
         const trimmedTerm = currentSearchTerm.trim();
 
-        if (trimmedTerm && !isNaN(trimmedTerm)) {
-            stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`);
-            stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
-        } else if (normalizedTerm) {
-            const searchRegex = createSearchRegex(normalizedTerm);
-            let sql;
+        try { // Оборачиваем в try...catch для отлова любых ошибок
+            if (trimmedTerm && !isNaN(trimmedTerm)) {
+                const sql = `SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`;
+                console.log("Executing SQL (numeric search):", sql);
+                stmt = db.prepare(sql);
+                stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
+            } else if (normalizedTerm) {
+                const searchRegex = createSearchRegex(normalizedTerm);
+                let sql;
+                const mainColumnsSearch = `(infinitive_norm REGEXP :regex OR translation_norm REGEXP :regex OR present_3rd_norm REGEXP :regex OR past_3rd_norm REGEXP :regex OR question_norm REGEXP :regex)`;
 
-            const mainColumnsSearch = `(infinitive_norm REGEXP :regex OR translation_norm REGEXP :regex OR present_3rd_norm REGEXP :regex OR past_3rd_norm REGEXP :regex OR question_norm REGEXP :regex)`;
+                if (isConjugationIndexReady) {
+                    sql = `
+                        SELECT *,
+                            CASE
+                                WHEN (all_forms_text REGEXP :regex AND NOT ${mainColumnsSearch}) THEN 1
+                                ELSE 0
+                            END AS match_type
+                        FROM verbs
+                        WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :regex
+                        ORDER BY match_type DESC, is_priority DESC, id_num
+                        LIMIT :limit OFFSET :offset`;
+                } else {
+                    sql = `
+                        SELECT *, 0 AS match_type
+                        FROM verbs
+                        WHERE ${mainColumnsSearch}
+                        ORDER BY is_priority DESC, id_num
+                        LIMIT :limit OFFSET :offset`;
+                }
+                
+                console.log("Search Regex:", searchRegex);
+                console.log("Executing SQL (text search):", sql);
 
-            if (isConjugationIndexReady) {
-                // ПРОДВИНУТЫЙ ЗАПРОС
-                sql = `
-                    SELECT *,
-                        CASE
-                            WHEN (all_forms_text REGEXP :regex AND NOT ${mainColumnsSearch}) THEN 1
-                            ELSE 0
-                        END AS match_type
-                    FROM verbs
-                    WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :regex
-                    ORDER BY match_type DESC, is_priority DESC, id_num
-                    LIMIT :limit OFFSET :offset`;
+                stmt = db.prepare(sql);
+                stmt.bind({
+                    ':regex': searchRegex,
+                    ':limit': PAGE_SIZE,
+                    ':offset': currentOffset
+                });
             } else {
-                // СТАНДАРТНЫЙ ЗАПРОС
-                sql = `
-                    SELECT *, 0 AS match_type
-                    FROM verbs
-                    WHERE ${mainColumnsSearch}
-                    ORDER BY is_priority DESC, id_num
-                    LIMIT :limit OFFSET :offset`;
+                const sql = "SELECT *, 0 AS match_type FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset";
+                console.log("Executing SQL (no search term):", sql);
+                stmt = db.prepare(sql);
+                stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
             }
-            stmt = db.prepare(sql);
-            stmt.bind({
-                ':regex': searchRegex,
-                ':limit': PAGE_SIZE,
-                ':offset': currentOffset
-            });
-        } else {
-            stmt = db.prepare("SELECT *, 0 AS match_type FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
-            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
-        }
 
-        const results = [];
-        while (stmt.step()) { results.push(stmt.getAsObject()); }
-        stmt.free();
-        renderTable(results, !isNewSearch);
-        currentOffset += results.length;
-        isLoading = false;
+            const results = [];
+            while (stmt.step()) { results.push(stmt.getAsObject()); }
+            stmt.free();
+
+            console.log(`Query finished. Found ${results.length} results.`);
+            if (results.length > 0) {
+                console.log("First result:", results[0]);
+            }
+
+            renderTable(results, !isNewSearch);
+            currentOffset += results.length;
+            isLoading = false;
+        } catch (e) {
+            console.error("!!! CRITICAL ERROR IN loadMoreVerbs !!!", e);
+            isLoading = false; // Сбрасываем флаг загрузки при ошибке
+        }
     }
 
     // --- ГЛАВНАЯ ФУНКЦИЯ ---
@@ -431,14 +454,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ---
+    // --- ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ (С РЕЖИМОМ ОТЛАДКИ) ---
     async function initializeApp() {
         try {
+            // Если мы не в Telegram, включаем режим отладки
             if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
-                showAccessDeniedScreen();
-                alert("Это приложение предназначено для запуска внутри Telegram.");
-                return;
+                console.warn("--- RUNNING IN DEBUG MODE (OUTSIDE TELEGRAM) ---");
+                // Создаем фейковый объект Telegram, чтобы избежать ошибок
+                window.Telegram = {
+                    WebApp: {
+                        ready: () => {},
+                        onEvent: () => {},
+                        MainButton: { setParams: () => {} },
+                        colorScheme: 'light',
+                        initData: ''
+                    }
+                };
+                // Пропускаем проверку доступа и сразу запускаем приложение
+                showAppContent();
+                await main();
+                return; // Завершаем выполнение, чтобы не запускать логику для Telegram
             }
+
+            // Стандартная логика для запуска внутри Telegram
             const tg = Telegram.WebApp;
             tg.ready();
             const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
