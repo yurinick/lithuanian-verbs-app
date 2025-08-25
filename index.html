@@ -107,9 +107,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const createSearchRegex = (term) => {
-    // Заменяем каждую букву 'i' или 'y' на шаблон [iy], который означает "любой из этих символов"
-    return term.replace(/[iy]/g, '[iy]');
-};
+        // Создаем регистронезависимый поиск и обрабатываем несколько правил:
+        // 1. "ai" эквивалентно "ei"
+        // 2. "i" эквивалентно "y"
+
+        // Используем уникальные плейсхолдеры, чтобы избежать конфликтов при замене.
+        // Это позволяет нам сначала найти все нужные участки, а потом заменить их на рег. выражения.
+        const placeholder_ai_ei = '___AI_EI_PLACEHOLDER___';
+        const placeholder_iy = '___IY_PLACEHOLDER___';
+
+        // Сначала заменяем более длинные и специфичные последовательности (диграфы).
+        // Флаг `i` здесь для надежности, хотя строка уже в нижнем регистре.
+        let result = term.replace(/ai/gi, placeholder_ai_ei)
+                         .replace(/ei/gi, placeholder_ai_ei);
+
+        // Затем заменяем отдельные буквы, которые не являются частью диграфов.
+        result = result.replace(/[iy]/gi, placeholder_iy);
+
+        // Теперь, когда все исходные буквы "спрятаны", заменяем плейсхолдеры на шаблоны RegExp.
+        result = result.replace(new RegExp(placeholder_ai_ei, 'g'), '(ai|ei)')
+                       .replace(new RegExp(placeholder_iy, 'g'), '[iy]');
+
+        return result;
+    };
     const getPreferredForm = (formsArray) => {
     if (!formsArray || formsArray.length === 0) return '-';
 
