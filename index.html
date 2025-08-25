@@ -126,48 +126,134 @@ document.addEventListener('DOMContentLoaded', () => {
         return formsToShow.join(' / ');
     };
 
-    // === ФУНКЦИИ РЕНДЕРИНГА (без изменений) ===
+    // === ФУНКЦИИ РЕНДЕРИНГА (ОТРЕФАКТОРЕНО) ===
     function renderTable(verbs, append = false) {
-        if (!append) { const headers = ['№', 'P', '#', 'Инфинитив', '3 л. настоящего вр.', '3 л. прошедшего однократного вр.', 'Вопрос', 'Перевод']; let headerHTML = '<tr>'; headers.forEach(h => { let classes = 'py-3 px-4 text-left text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase'; if (['№', 'P', '#'].includes(h)) classes += ' w-[50px] text-center px-1'; headerHTML += `<th class="${classes}">${h}</th>`; }); headerHTML += '</tr>'; tableHead.innerHTML = headerHTML; tableBody.innerHTML = ''; }
-        verbs.forEach(verb => {
-             const tr = document.createElement('tr');
-             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
-             if (verb.is_priority === 1) {
-        // Убираем старую "серую" зебру, чтобы она не мешала
-    tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
+        // 1. Очистка и рендеринг заголовка (только если это не дозагрузка)
+        if (!append) {
+            // Конфигурация столбцов: название, ширина (Tailwind), выравнивание (Tailwind)
+            const headerConfig = [
+                { title: '№', width: 'w-12', align: 'text-center' },
+                { title: 'P', width: 'w-12', align: 'text-center' },
+                { title: '#', width: 'w-12', align: 'text-center' },
+                { title: 'Инфинитив', width: 'w-1/5', align: 'text-left' },
+                { title: '3 л. настоящего вр.', width: 'w-1/5', align: 'text-left' },
+                { title: '3 л. прошедшего однократного вр.', width: 'w-1/5', align: 'text-left' },
+                { title: 'Вопрос', width: 'w-1/6', align: 'text-left' },
+                { title: 'Перевод', width: '', align: 'text-left' } // Ширина не задана, займет остаток
+            ];
 
-    // Добавляем рамку и создаем нашу собственную "фиолетовую зебру"
-    tr.classList.add(
-        'border-l-4',
-        'border-violet-500',
-        'bg-violet-100',                               // Фон для нечетных строк (светлая тема)
-        'dark:bg-violet-900/40',                       // Фон для нечетных строк (темная тема)
-        'even:bg-violet-200/80',                       // Фон для ЧЕТНЫХ строк (светлая тема)
-        'dark:even:bg-violet-800/40'                   // Фон для ЧЕТНЫХ строк (темная тема)
-    );
-             }
-        // Для подсветки фона можно использовать: tr.classList.add('bg-violet-100', 'dark:bg-violet-900/50');
-             if (verb.conjugations) { tr.classList.add('cursor-pointer'); tr.addEventListener('click', () => showModalForVerb(verb));
-             
-             } const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation']; let rowHTML = '';
-             db_keys.forEach(key => { let classes = 'py-2 px-4 text-left text-gray-700 dark:text-gray-300';
-             if (['id_num', 'p_val', 'hash_val'].includes(key)) classes += ' text-center px-1 text-gray-600 dark:text-gray-400';
-             else if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
-             if (key === 'translation') {
-    classes += ' whitespace-normal break-words max-w-[160px]'; // или другое значение
-}
-             let cellContent = verb[key] || '';
-// Если в ячейке строка с запятой, берем только первую часть
-if (typeof cellContent === 'string' && cellContent.includes(',')) {
-    cellContent = cellContent.split(',')[0].trim() + '...'; // Показываем первый вариант и многоточие
-}
-rowHTML += `<td class="${classes}">${cellContent}</td>`;
-             }); tr.innerHTML = rowHTML; tableBody.appendChild(tr); });
-        noResultsMessage.classList.toggle('hidden', tableBody.children.length > 0); recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
+            let headerHTML = '<tr>';
+            headerConfig.forEach(h => {
+                const classes = `py-3 px-4 text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase ${h.width} ${h.align}`;
+                headerHTML += `<th class="${classes}">${h.title}</th>`;
+            });
+            headerHTML += '</tr>';
+            tableHead.innerHTML = headerHTML;
+            tableBody.innerHTML = ''; // Очищаем тело таблицы перед новым поиском
+        }
+
+        // 2. Рендеринг строк таблицы
+        verbs.forEach(verb => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
+
+            // Приоритетная подсветка
+            if (verb.is_priority === 1) {
+                tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
+                tr.classList.add(
+                    'border-l-4', 'border-violet-500', 'bg-violet-100', 'dark:bg-violet-900/40',
+                    'even:bg-violet-200/80', 'dark:even:bg-violet-800/40'
+                );
+            }
+
+            // Добавляем обработчик клика для открытия модального окна
+            if (verb.conjugations) {
+                tr.classList.add('cursor-pointer');
+                tr.addEventListener('click', () => showModalForVerb(verb));
+            }
+
+            const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
+            const alignConfig = ['text-center', 'text-center', 'text-center', 'text-left', 'text-left', 'text-left', 'text-left', 'text-left'];
+
+            let rowHTML = '';
+            db_keys.forEach((key, index) => {
+                // Применяем ВЕРТИКАЛЬНОЕ ВЫРАВНИВАНИЕ ПО СЕРЕДИНЕ и горизонтальное из конфига.
+                // Добавляем классы для ПЕРЕНОСА СТРОК.
+                let classes = `py-2 px-4 align-middle ${alignConfig[index]} text-gray-700 dark:text-gray-300 whitespace-normal break-words`;
+
+                if (key === 'infinitive') {
+                    classes += ' text-gray-800 dark:text-gray-200';
+                }
+
+                let cellContent = verb[key] || '';
+
+                // УДАЛЕНО: Условие, которое обрезало текст и добавляло "..."
+                rowHTML += `<td class="${classes}">${cellContent}</td>`;
+            });
+
+            tr.innerHTML = rowHTML;
+            tableBody.appendChild(tr);
+        });
+
+        // 3. Обновление статуса (сообщение "не найдено" и счетчик)
+        noResultsMessage.classList.toggle('hidden', tableBody.children.length > 0);
+        recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
+
     function showModalForVerb(verb) {
-        if (!verb.conjugations) return; const verbInfo = JSON.parse(verb.conjugations); modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`; modalBody.innerHTML = ''; const tenses = { "Present tense": verbInfo["Present tense"], "Past tense": verbInfo["Past tense"], "Future tense": verbInfo["Future tense"], "Conditional mood": verbInfo["Conditional mood"], "Imperative mood": verbInfo["Imperative mood"], "Past freq. tense": verbInfo["Past freq. tense"] }; const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"]; const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"]; let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`; tableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`; mainTenses.forEach(tense => { tableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`; }); tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`; persons.forEach((person, personIndex) => { tableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`; mainTenses.forEach(tense => { const item = tenses[tense] ? tenses[tense][personIndex] : null; const form = item ? getPreferredForm(item.forms) : '-'; tableHTML += `<td class="px-2 py-1">${form}</td>`; }); tableHTML += `</tr>`; }); tableHTML += `</tbody></table></div>`; modalBody.innerHTML = tableHTML;
-        ["Imperative mood", "Past freq. tense"].forEach(tense => { if (tenses[tense] && tenses[tense].length > 0) { let tenseHTML = `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`; tenseHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`; tenses[tense].forEach(row => { tenseHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`; }); tenseHTML += `</tbody></table>`; modalBody.innerHTML += tenseHTML; } });
+        if (!verb.conjugations) return;
+
+        const verbInfo = JSON.parse(verb.conjugations);
+        modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`;
+        modalBody.innerHTML = ''; // Очищаем предыдущее содержимое
+
+        const tenses = {
+            "Present tense": verbInfo["Present tense"],
+            "Past tense": verbInfo["Past tense"],
+            "Future tense": verbInfo["Future tense"],
+            "Conditional mood": verbInfo["Conditional mood"],
+            "Imperative mood": verbInfo["Imperative mood"],
+            "Past freq. tense": verbInfo["Past freq. tense"]
+        };
+
+        // --- Таблица основных времен ---
+        const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
+        const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
+        let mainTableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
+        mainTableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
+        mainTenses.forEach(tense => {
+            mainTableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`;
+        });
+        mainTableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+        persons.forEach((person, personIndex) => {
+            mainTableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`;
+            mainTenses.forEach(tense => {
+                const item = tenses[tense] ? tenses[tense][personIndex] : null;
+                const form = item ? getPreferredForm(item.forms) : '-';
+                mainTableHTML += `<td class="px-2 py-1">${form}</td>`;
+            });
+            mainTableHTML += `</tr>`;
+        });
+        mainTableHTML += `</tbody></table></div>`;
+        modalBody.innerHTML = mainTableHTML;
+
+        // --- Отдельные таблицы для других наклонений/времен ---
+        let otherFormsHTML = '';
+        ["Imperative mood", "Past freq. tense"].forEach(tense => {
+            if (tenses[tense] && tenses[tense].length > 0) {
+                otherFormsHTML += `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
+                otherFormsHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
+                tenses[tense].forEach(row => {
+                    otherFormsHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50">`;
+                    otherFormsHTML += `<td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td>`;
+                    otherFormsHTML += `<td class="px-2 py-1">${getPreferredForm(row.forms)}</td>`;
+                    otherFormsHTML += `</tr>`;
+                });
+                otherFormsHTML += `</tbody></table>`;
+            }
+        });
+        modalBody.innerHTML += otherFormsHTML;
+
         modalOverlay.classList.remove('hidden');
     }
     function closeModal() { modalOverlay.classList.add('hidden'); }
