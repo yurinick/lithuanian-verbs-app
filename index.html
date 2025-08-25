@@ -130,26 +130,30 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderTable(verbs, append = false) {
         // 1. Очистка и рендеринг заголовка (только если это не дозагрузка)
         if (!append) {
-            // Конфигурация столбцов: название, ширина (Tailwind), выравнивание (Tailwind)
+            // Конфигурация столбцов для РЕСПОНСИВНОГО ДИЗАЙНА
+            // Ширины (md:w-*) применяются только на десктопных экранах (где layout-алгоритм 'fixed')
             const headerConfig = [
-                { title: '№', width: 'w-12', align: 'text-center' },
-                { title: 'P', width: 'w-12', align: 'text-center' },
-                { title: '#', width: 'w-12', align: 'text-center' },
-                { title: 'Инфинитив', width: 'w-1/5', align: 'text-left' },
-                { title: '3 л. настоящего вр.', width: 'w-1/5', align: 'text-left' },
-                { title: '3 л. прошедшего однократного вр.', width: 'w-1/5', align: 'text-left' },
-                { title: 'Вопрос', width: 'w-1/6', align: 'text-left' },
-                { title: 'Перевод', width: '', align: 'text-left' } // Ширина не задана, займет остаток
+                { title: '№', width: 'md:w-12', align: 'text-center' },
+                { title: 'P', width: 'md:w-12', align: 'text-center' },
+                { title: '#', width: 'md:w-12', align: 'text-center' },
+                { title: 'Инфинитив', width: 'md:w-1/5', align: 'text-left' },
+                { title: '3 л. настоящего вр.', width: 'md:w-1/5', align: 'text-left' },
+                { title: '3 л. прошедшего однократного вр.', width: 'md:w-1/5', align: 'text-left' },
+                // "Вопрос" на десктопе сужен вдвое
+                { title: 'Вопрос', width: 'md:w-[8%]', align: 'text-left' },
+                // "Перевод" на десктопе займет остаток, на мобильном ширина авто
+                { title: 'Перевод', width: '', align: 'text-left' }
             ];
 
             let headerHTML = '<tr>';
             headerConfig.forEach(h => {
-                const classes = `py-3 px-4 text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase ${h.width} ${h.align}`;
+                // Уменьшены горизонтальные отступы (px-2 вместо px-4)
+                const classes = `py-3 px-2 text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase ${h.width} ${h.align}`;
                 headerHTML += `<th class="${classes}">${h.title}</th>`;
             });
             headerHTML += '</tr>';
             tableHead.innerHTML = headerHTML;
-            tableBody.innerHTML = ''; // Очищаем тело таблицы перед новым поиском
+            tableBody.innerHTML = '';
         }
 
         // 2. Рендеринг строк таблицы
@@ -157,7 +161,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
 
-            // Приоритетная подсветка
             if (verb.is_priority === 1) {
                 tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
                 tr.classList.add(
@@ -166,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             }
 
-            // Добавляем обработчик клика для открытия модального окна
             if (verb.conjugations) {
                 tr.classList.add('cursor-pointer');
                 tr.addEventListener('click', () => showModalForVerb(verb));
@@ -177,17 +179,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let rowHTML = '';
             db_keys.forEach((key, index) => {
-                // Применяем ВЕРТИКАЛЬНОЕ ВЫРАВНИВАНИЕ ПО СЕРЕДИНЕ и горизонтальное из конфига.
-                // Добавляем классы для ПЕРЕНОСА СТРОК.
-                let classes = `py-2 px-4 align-middle ${alignConfig[index]} text-gray-700 dark:text-gray-300 whitespace-normal break-words`;
+                // Уменьшены горизонтальные отступы (px-2 вместо px-4)
+                let classes = `py-2 px-2 align-middle ${alignConfig[index]} text-gray-700 dark:text-gray-300 whitespace-normal break-words`;
 
                 if (key === 'infinitive') {
                     classes += ' text-gray-800 dark:text-gray-200';
                 }
 
                 let cellContent = verb[key] || '';
-
-                // УДАЛЕНО: Условие, которое обрезало текст и добавляло "..."
                 rowHTML += `<td class="${classes}">${cellContent}</td>`;
             });
 
@@ -195,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tableBody.appendChild(tr);
         });
 
-        // 3. Обновление статуса (сообщение "не найдено" и счетчик)
+        // 3. Обновление статуса
         noResultsMessage.classList.toggle('hidden', tableBody.children.length > 0);
         recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
