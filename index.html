@@ -78,7 +78,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // === КОНФИГУРАЦИЯ (ИСПРАВЛЕНО) ===
+    // === КОНФИГУРАЦИЯ ===
     const CHECK_ACCESS_URL = "https://verbs-api-seven.vercel.app/api/check-access";
     const REQUEST_ACCESS_URL = "https://verbs-api-seven.vercel.app/api/request-access";
 
@@ -89,8 +89,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentOffset = 0;
     let isLoading = false;
     let currentSearchTerm = "";
+    let isConjugationIndexReady = false; // Флаг готовности расширенного поиска
     const TENSE_TRANSLATIONS = { "Present tense": "Настоящее время", "Past tense": "Прошедшее время", "Future tense": "Будущее время", "Conditional mood": "Сослагательное наклонение", "Imperative mood": "Повелительное наклонение", "Past freq. tense": "Прошедшее многократное время" };
-    
+
     // === DOM-ЭЛЕМЕНТЫ ===
     const searchInput = document.getElementById('searchInput');
     const clearSearchButton = document.getElementById('clearSearchButton');
@@ -107,56 +108,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const createSearchRegex = (term) => {
-        // Создаем регистронезависимый поиск и обрабатываем несколько правил:
-        // 1. "i" эквивалентно "y"
-        // 2. "ai" эквивалентно "ei"
-
-        // Сначала применяем простое правило для отдельных букв.
         let result = term.replace(/[iy]/g, '[iy]');
-
-        // Затем, на основе предыдущего результата, обрабатываем более сложное правило для диграфов.
-        // Это позволяет корректно найти сочетания "a" или "e" с "i" или "y".
-        result = result.replace(/a\[iy\]/g, '(ai|ei)')
-                       .replace(/e\[iy\]/g, '(ai|ei)');
-
+        result = result.replace(/a\[iy\]/g, '(ai|ei)').replace(/e\[iy\]/g, '(ai|ei)');
         return result;
     };
     const getPreferredForm = (formsArray) => {
-    if (!formsArray || formsArray.length === 0) return '-';
-
-    // Проверяем наличие только знаков ударения (акут, гравис, тильда),
-        // игнорируя другие диакритики литовского алфавита (как в ą, č, ę, ė, į, š, ų, ū, ž).
+        if (!formsArray || formsArray.length === 0) return '-';
         const hasStress = (s) => /[\u0300\u0301\u0303]/.test(s.normalize('NFD'));
-        
         const stressedForms = formsArray.filter(hasStress);
-
-        // Если найдены формы с ударением, показываем только их.
-        // В противном случае, показываем исходные формы (без ударения).
         const formsToShow = stressedForms.length > 0 ? stressedForms : formsArray;
-        
         return formsToShow.join(' / ');
     };
 
-    // === ФУНКЦИИ РЕНДЕРИНГА (ОТРЕФАКТОРЕНО) ===
+    // === ФУНКЦИИ РЕНДЕРИНГА (С УЧЕТОМ ПОДСВЕТКИ) ===
     function renderTable(verbs, append = false) {
-        // 1. Очистка и рендеринг заголовка (только если это не дозагрузка)
         if (!append) {
-            // Новая конфигурация с явными ширинами для десктопа и меньшими отступами
             const headerConfig = [
-                // Для десктопа задаем жесткие процентные ширины
                 { title: '№', width: 'md:w-[4%]', align: 'text-center' },
                 { title: 'P', width: 'md:w-[4%]', align: 'text-center' },
                 { title: '#', width: 'md:w-[4%]', align: 'text-center' },
                 { title: 'Инфинитив', width: 'md:w-[18%]', align: 'text-left' },
                 { title: '3 л. настоящего вр.', width: 'md:w-[18%]', align: 'text-left' },
                 { title: '3 л. прошедшего однократного вр.', width: 'md:w-[18%]', align: 'text-left' },
-                { title: 'Вопрос', width: 'md:w-[8%]', align: 'text-left' }, // Сужен
-                { title: 'Перевод', width: 'md:w-[26%]', align: 'text-left' } // Расширен
+                { title: 'Вопрос', width: 'md:w-[8%]', align: 'text-left' },
+                { title: 'Перевод', width: 'md:w-[26%]', align: 'text-left' }
             ];
-
             let headerHTML = '<tr>';
             headerConfig.forEach(h => {
-                // Отступы сделаны еще меньше (px-1)
                 const classes = `py-3 px-1 text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase ${h.width} ${h.align}`;
                 headerHTML += `<th class="${classes}">${h.title}</th>`;
             });
@@ -165,12 +143,22 @@ document.addEventListener('DOMContentLoaded', () => {
             tableBody.innerHTML = '';
         }
 
-        // 2. Рендеринг строк таблицы
         verbs.forEach(verb => {
             const tr = document.createElement('tr');
+            // Базовый стиль + стандартная зебра
             tr.className = 'hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-150 even:bg-gray-100 dark:even:bg-gray-700';
 
-            if (verb.is_priority === 1) {
+            // ПРИМЕНЕНИЕ ПРИОРИТЕТНОЙ ПОДСВЕТКИ
+            // Розовый (высший приоритет): найдено только в спряжениях
+            if (verb.match_type === 1) {
+                tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
+                tr.classList.add(
+                    'border-l-4', 'border-pink-500', 'bg-pink-100', 'dark:bg-pink-900/40',
+                    'even:bg-pink-200/80', 'dark:even:bg-pink-800/40'
+                );
+            }
+            // Фиолетовый (второй приоритет): глагол из списка "важных"
+            else if (verb.is_priority === 1) {
                 tr.classList.remove('even:bg-gray-100', 'dark:even:bg-gray-700');
                 tr.classList.add(
                     'border-l-4', 'border-violet-500', 'bg-violet-100', 'dark:bg-violet-900/40',
@@ -185,53 +173,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const db_keys = ['id_num', 'p_val', 'hash_val', 'infinitive', 'present_3rd', 'past_3rd', 'question', 'translation'];
             const alignConfig = ['text-center', 'text-center', 'text-center', 'text-left', 'text-left', 'text-left', 'text-left', 'text-left'];
-
             let rowHTML = '';
             db_keys.forEach((key, index) => {
-                // Отступы сделаны еще меньше (px-1)
                 let classes = `py-2 px-1 align-middle ${alignConfig[index]} text-gray-700 dark:text-gray-300 whitespace-normal break-words`;
-
-                if (key === 'infinitive') {
-                    classes += ' text-gray-800 dark:text-gray-200';
-                }
-
+                if (key === 'infinitive') classes += ' text-gray-800 dark:text-gray-200';
                 let cellContent = verb[key] || '';
                 rowHTML += `<td class="${classes}">${cellContent}</td>`;
             });
-
             tr.innerHTML = rowHTML;
             tableBody.appendChild(tr);
         });
 
-        // 3. Обновление статуса
         noResultsMessage.classList.toggle('hidden', tableBody.children.length > 0);
         recordCount.textContent = `Showing ${tableBody.children.length} of ${totalVerbsCount} verbs`;
     }
 
     function showModalForVerb(verb) {
         if (!verb.conjugations) return;
-
         const verbInfo = JSON.parse(verb.conjugations);
         modalTitle.textContent = `${verb.infinitive.charAt(0).toUpperCase() + verb.infinitive.slice(1)} - ${verb.translation}`;
-        modalBody.innerHTML = ''; // Очищаем предыдущее содержимое
-
-        const tenses = {
-            "Present tense": verbInfo["Present tense"],
-            "Past tense": verbInfo["Past tense"],
-            "Future tense": verbInfo["Future tense"],
-            "Conditional mood": verbInfo["Conditional mood"],
-            "Imperative mood": verbInfo["Imperative mood"],
-            "Past freq. tense": verbInfo["Past freq. tense"]
-        };
-
-        // --- Таблица основных времен ---
+        modalBody.innerHTML = '';
+        const tenses = verbInfo;
         const mainTenses = ["Present tense", "Past tense", "Future tense", "Conditional mood"];
         const persons = ["Aš", "Tu", "Jis/ji", "Mes", "Jūs", "Jie/jos"];
         let mainTableHTML = `<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200 dark:divide-gray-700 mb-4">`;
         mainTableHTML += `<thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1"></th>`;
-        mainTenses.forEach(tense => {
-            mainTableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`;
-        });
+        mainTenses.forEach(tense => { mainTableHTML += `<th class="px-2 py-1 text-left text-xs font-semibold text-sky-700 dark:text-sky-300">${TENSE_TRANSLATIONS[tense] || tense}</th>`; });
         mainTableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
         persons.forEach((person, personIndex) => {
             mainTableHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 font-semibold">${person}</td>`;
@@ -244,147 +211,179 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         mainTableHTML += `</tbody></table></div>`;
         modalBody.innerHTML = mainTableHTML;
-
-        // --- Отдельные таблицы для других наклонений/времен ---
         let otherFormsHTML = '';
         ["Imperative mood", "Past freq. tense"].forEach(tense => {
             if (tenses[tense] && tenses[tense].length > 0) {
                 otherFormsHTML += `<h3 class="text-lg font-semibold mt-4 mb-2 text-sky-600 dark:text-sky-400">${TENSE_TRANSLATIONS[tense] || tense}</h3>`;
                 otherFormsHTML += `<table class="min-w-full text-sm"><tbody class="divide-y divide-gray-200 dark:divide-gray-700">`;
                 tenses[tense].forEach(row => {
-                    otherFormsHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50">`;
-                    otherFormsHTML += `<td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td>`;
-                    otherFormsHTML += `<td class="px-2 py-1">${getPreferredForm(row.forms)}</td>`;
-                    otherFormsHTML += `</tr>`;
+                    otherFormsHTML += `<tr class="hover:bg-gray-100 dark:hover:bg-gray-600 even:bg-gray-50 dark:even:bg-gray-800/50"><td class="px-2 py-1 w-1/4 font-semibold">${row.person}</td><td class="px-2 py-1">${getPreferredForm(row.forms)}</td></tr>`;
                 });
                 otherFormsHTML += `</tbody></table>`;
             }
         });
         modalBody.innerHTML += otherFormsHTML;
-
         modalOverlay.classList.remove('hidden');
     }
     function closeModal() { modalOverlay.classList.add('hidden'); }
 
-    // --- БЛОК ЛОГИКИ ДОСТУПА (ПОЛНОСТЬЮ ПЕРЕПИСАН) ---
+    // --- ЛОГИКА ДОСТУПА ---
     function showCriticalError(message) {
         document.getElementById('main-content').style.display = 'none';
         document.getElementById('access-denied').classList.add('hidden');
         document.getElementById('critical-error-message').textContent = message;
         document.getElementById('critical-error').classList.remove('hidden');
     }
-
     async function handleRequestAccessClick(event) {
-        event.preventDefault(); // Предотвращаем любые действия по умолчанию
+        event.preventDefault();
         const requestButton = document.getElementById('requestAccessButton');
         const originalText = requestButton.textContent;
         requestButton.disabled = true;
         requestButton.textContent = 'Отправка...';
-
         try {
             const tg = Telegram.WebApp;
-            if (!tg.initData) {
-                alert('Не удалось получить данные Telegram. Пожалуйста, перезапустите приложение.');
-                throw new Error('initData is missing');
-            }
-
-            const response = await fetch(REQUEST_ACCESS_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ initData: tg.initData })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ message: 'Не удалось прочитать ответ сервера.' }));
-                throw new Error(`Сервер ответил ошибкой: ${response.status}. ${errorData.message || ''}`);
-            }
-
+            if (!tg.initData) { throw new Error('initData is missing'); }
+            const response = await fetch(REQUEST_ACCESS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData: tg.initData }) });
+            if (!response.ok) { const errorData = await response.json().catch(() => ({ message: 'Не удалось прочитать ответ сервера.' })); throw new Error(`Сервер ответил ошибкой: ${response.status}. ${errorData.message || ''}`); }
             const result = await response.json();
-            if (result.success) {
-                alert('Ваш запрос успешно отправлен администратору! Вы получите уведомление в Telegram о решении.');
-                requestButton.textContent = 'Отправлено!';
-                // Кнопка остается неактивной, доступ НЕ предоставляется
-            } else {
-                throw new Error(result.message || 'Произошла неизвестная ошибка при отправке запроса.');
-            }
-
-        } catch (error) {
-            console.error('Failed to send access request:', error);
-            alert(`Ошибка: ${error.message}`);
-            requestButton.disabled = false; // Позволяем попробовать еще раз
-            requestButton.textContent = originalText;
-        }
+            if (result.success) { alert('Ваш запрос успешно отправлен администратору! Вы получите уведомление в Telegram о решении.'); requestButton.textContent = 'Отправлено!'; }
+            else { throw new Error(result.message || 'Произошла неизвестная ошибка при отправке запроса.'); }
+        } catch (error) { console.error('Failed to send access request:', error); alert(`Ошибка: ${error.message}`); requestButton.disabled = false; requestButton.textContent = originalText; }
     }
-    
     function showAccessDeniedScreen() {
         document.getElementById('main-content').style.display = 'none';
         document.getElementById('access-denied').classList.remove('hidden');
-        
         const requestButton = document.getElementById('requestAccessButton');
         requestButton.href = '#';
         requestButton.removeEventListener('click', handleRequestAccessClick);
         requestButton.addEventListener('click', handleRequestAccessClick);
     }
-
     function showAppContent() {
         document.getElementById('main-content').style.display = 'flex';
         document.getElementById('access-denied').classList.add('hidden');
         document.getElementById('critical-error').classList.add('hidden');
     }
-
     async function checkTelegramAccess(initData) {
-        const response = await fetch(CHECK_ACCESS_URL, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ initData: initData })
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
-        }
-        const data = await response.json();
-        return data.isAllowed;
+        const response = await fetch(CHECK_ACCESS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData: initData }) });
+        if (!response.ok) { const errorText = await response.text(); throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`); }
+        return (await response.json()).isAllowed;
     }
 
-    // --- ЗАГРУЗКА БАЗЫ ДАННЫХ (без изменений) ---
-    async function loadMoreVerbs(isNewSearch = false) {
-        if (!db || isLoading) return; isLoading = true; if (isNewSearch) currentOffset = 0;
-        let stmt; const normalizedTerm = normalizeForSearch(currentSearchTerm); const trimmedTerm = currentSearchTerm.trim();
-        if (trimmedTerm && !isNaN(trimmedTerm)) { stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`); stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset }); 
-            } else if (normalizedTerm) {
-            const searchRegex = createSearchRegex(normalizedTerm);    
-            const sql = `
-        SELECT 
-            *,
-            CASE
-                WHEN infinitive_norm LIKE :term_start THEN 1
-                WHEN translation_norm LIKE :term_start THEN 1
-                WHEN present_3rd_norm LIKE :term_start THEN 1
-                WHEN past_3rd_norm LIKE :term_start THEN 1
-                WHEN question_norm LIKE :term_start THEN 1
-                ELSE 0
-            END AS is_priority
-        FROM verbs 
-        WHERE 
-            -- Используем новый оператор REGEXP для основного поиска
-            infinitive_norm REGEXP :regex OR 
-            translation_norm REGEXP :regex OR 
-            present_3rd_norm REGEXP :regex OR 
-            past_3rd_norm REGEXP :regex OR 
-            question_norm REGEXP :regex
-        ORDER BY is_priority DESC, id_num
-        LIMIT :limit OFFSET :offset`;
-    stmt = db.prepare(sql);
-    stmt.bind({
-        ':regex':      searchRegex,              // Наш новый шаблон RegEx
-        ':term_start': `${normalizedTerm}%`,      // Для поиска в начале слова
-        ':limit':      PAGE_SIZE,
-        ':offset':     currentOffset
-    });
-            } else { stmt = db.prepare("SELECT * FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
-            
-            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset }); }
-        const results = []; while(stmt.step()) { results.push(stmt.getAsObject()); } stmt.free(); renderTable(results, !isNewSearch); currentOffset += results.length; isLoading = false;
+    // --- ФОНОВАЯ ИНДЕКСАЦИЯ СПРЯЖЕНИЙ ---
+    async function buildConjugationIndex() {
+        console.log("Background indexing started...");
+        try {
+            db.exec("ALTER TABLE verbs ADD COLUMN all_forms_text TEXT;");
+            const updateStmt = db.prepare("UPDATE verbs SET all_forms_text = :forms WHERE id_num = :id");
+            const verbsToProcess = db.exec("SELECT id_num, conjugations FROM verbs WHERE conjugations IS NOT NULL AND conjugations != ''");
+            if (!verbsToProcess[0]) {
+                console.log("No conjugations to index.");
+                isConjugationIndexReady = true;
+                return;
+            }
+            const rows = verbsToProcess[0].values;
+            const CHUNK_SIZE = 50; // Обрабатываем по 50 глаголов за раз, чтобы не блокировать UI
+            for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+                const chunk = rows.slice(i, i + CHUNK_SIZE);
+                db.exec("BEGIN TRANSACTION;");
+                for (const row of chunk) {
+                    const id_num = row[0];
+                    const conjugationsJSON = row[1];
+                    try {
+                        const conjugations = JSON.parse(conjugationsJSON);
+                        let allForms = [];
+                        for (const tense in conjugations) {
+                            if (Array.isArray(conjugations[tense])) {
+                                conjugations[tense].forEach(person => {
+                                    if (person && Array.isArray(person.forms)) {
+                                        allForms.push(...person.forms);
+                                    }
+                                });
+                            }
+                        }
+                        const normalizedForms = normalizeForSearch(allForms.join(' '));
+                        updateStmt.run({ ':forms': normalizedForms, ':id': id_num });
+                    } catch (e) {
+                        console.error(`Failed to parse conjugations for id_num ${id_num}:`, e);
+                    }
+                }
+                db.exec("COMMIT;");
+                // Даем браузеру "продохнуть" и обработать другие события
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            updateStmt.free();
+            isConjugationIndexReady = true;
+            console.log("Background indexing complete!");
+            // Меняем стиль поисковой строки, чтобы показать, что поиск стал "продвинутым"
+            searchInput.classList.remove('focus:ring-sky-500', 'focus:border-sky-500');
+            searchInput.classList.add('focus:ring-pink-500', 'focus:border-pink-500');
+            searchInput.placeholder = "Advanced search enabled...";
+        } catch (err) {
+            console.error("Error during background indexing:", err);
+            // Не блокируем приложение, просто расширенный поиск будет недоступен
+        }
     }
+
+    // --- ПОИСК И ЗАГРУЗКА ДАННЫХ ---
+    async function loadMoreVerbs(isNewSearch = false) {
+        if (!db || isLoading) return;
+        isLoading = true;
+        if (isNewSearch) currentOffset = 0;
+
+        let stmt;
+        const normalizedTerm = normalizeForSearch(currentSearchTerm);
+        const trimmedTerm = currentSearchTerm.trim();
+
+        if (trimmedTerm && !isNaN(trimmedTerm)) {
+            stmt = db.prepare(`SELECT * FROM verbs WHERE id_num = :term OR p_val = :term OR hash_val = :term LIMIT :limit OFFSET :offset`);
+            stmt.bind({ ':term': Number(trimmedTerm), ':limit': PAGE_SIZE, ':offset': currentOffset });
+        } else if (normalizedTerm) {
+            const searchRegex = createSearchRegex(normalizedTerm);
+            let sql;
+
+            const mainColumnsSearch = `(infinitive_norm REGEXP :regex OR translation_norm REGEXP :regex OR present_3rd_norm REGEXP :regex OR past_3rd_norm REGEXP :regex OR question_norm REGEXP :regex)`;
+
+            if (isConjugationIndexReady) {
+                // ПРОДВИНУТЫЙ ЗАПРОС
+                sql = `
+                    SELECT *,
+                        CASE
+                            WHEN (all_forms_text REGEXP :regex AND NOT ${mainColumnsSearch}) THEN 1
+                            ELSE 0
+                        END AS match_type
+                    FROM verbs
+                    WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :regex
+                    ORDER BY match_type DESC, is_priority DESC, id_num
+                    LIMIT :limit OFFSET :offset`;
+            } else {
+                // СТАНДАРТНЫЙ ЗАПРОС
+                sql = `
+                    SELECT *, 0 AS match_type
+                    FROM verbs
+                    WHERE ${mainColumnsSearch}
+                    ORDER BY is_priority DESC, id_num
+                    LIMIT :limit OFFSET :offset`;
+            }
+            stmt = db.prepare(sql);
+            stmt.bind({
+                ':regex': searchRegex,
+                ':limit': PAGE_SIZE,
+                ':offset': currentOffset
+            });
+        } else {
+            stmt = db.prepare("SELECT *, 0 AS match_type FROM verbs ORDER BY id_num LIMIT :limit OFFSET :offset");
+            stmt.bind({ ':limit': PAGE_SIZE, ':offset': currentOffset });
+        }
+
+        const results = [];
+        while (stmt.step()) { results.push(stmt.getAsObject()); }
+        stmt.free();
+        renderTable(results, !isNewSearch);
+        currentOffset += results.length;
+        isLoading = false;
+    }
+
+    // --- ГЛАВНАЯ ФУНКЦИЯ ---
     async function main() {
         try {
             const SQL = await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` });
@@ -392,41 +391,54 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) { throw new Error(`Database fetch failed: ${response.status} ${response.statusText}`); }
             const dbFile = await response.arrayBuffer();
             db = new SQL.Database(new Uint8Array(dbFile));
-            // Регистрируем функцию REGEXP, чтобы ее можно было использовать в SQL-запросах
-        db.create_function("REGEXP", (pattern, text) => new RegExp(pattern, "i").test(text));
-            const countResult = db.exec("SELECT COUNT(*) FROM verbs"); totalVerbsCount = countResult[0].values[0][0];
-            searchInput.disabled = false; searchInput.placeholder = "Search any form..."; await loadMoreVerbs(true);
-            let debounceTimer; searchInput.addEventListener('input', (e) => { 
-                            // Показываем или скрываем кнопку "X" в зависимости от наличия текста
-                if (e.target.value.length > 0) {
-                    clearSearchButton.classList.remove('hidden');
-                } else {
-                    clearSearchButton.classList.add('hidden');
-                }
-                clearTimeout(debounceTimer); debounceTimer = setTimeout(() => { currentSearchTerm = e.target.value; loadMoreVerbs(true); }, 300); 
+            db.create_function("REGEXP", (pattern, text) => new RegExp(pattern, "i").test(text || ''));
+            const countResult = db.exec("SELECT COUNT(*) FROM verbs");
+            totalVerbsCount = countResult[0].values[0][0];
+            searchInput.disabled = false;
+            searchInput.placeholder = "Search any form...";
+            await loadMoreVerbs(true);
+
+            // ЗАПУСК ФОНОВОЙ ИНДЕКСАЦИИ (не дожидаясь завершения)
+            buildConjugationIndex();
+
+            let debounceTimer;
+            searchInput.addEventListener('input', (e) => {
+                clearSearchButton.classList.toggle('hidden', e.target.value.length === 0);
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    currentSearchTerm = e.target.value;
+                    loadMoreVerbs(true);
+                }, 300);
             });
-                // Обработчик для кнопки "X": очищает поле и сбрасывает поиск
-clearSearchButton.addEventListener('click', () => {
-    searchInput.value = ''; // Очищаем значение поля
-    currentSearchTerm = ''; // Очищаем терм для поиска
-    clearSearchButton.classList.add('hidden'); // Сразу скрываем кнопку
-    loadMoreVerbs(true); // Загружаем полный список
-    searchInput.focus(); // Возвращаем фокус в поле ввода для удобства
-});
-            tableWrapper.addEventListener('scroll', () => { if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) { loadMoreVerbs(false); } });
-            modalCloseButton.addEventListener('click', closeModal); modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); }); document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
-        } catch (err) { console.error("Initialization error (main function):", err); showCriticalError(`Failed to load database. Error: ${err.message}`); }
+            clearSearchButton.addEventListener('click', () => {
+                searchInput.value = '';
+                currentSearchTerm = '';
+                clearSearchButton.classList.add('hidden');
+                loadMoreVerbs(true);
+                searchInput.focus();
+            });
+            tableWrapper.addEventListener('scroll', () => {
+                if (!isLoading && tableWrapper.scrollTop + tableWrapper.clientHeight >= tableWrapper.scrollHeight - 200) {
+                    loadMoreVerbs(false);
+                }
+            });
+            modalCloseButton.addEventListener('click', closeModal);
+            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal(); });
+        } catch (err) {
+            console.error("Initialization error (main function):", err);
+            showCriticalError(`Failed to load database. Error: ${err.message}`);
+        }
     }
-    
-    // --- ГЛАВНАЯ ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ ---
+
+    // --- ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ---
     async function initializeApp() {
         try {
             if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
-                showAccessDeniedScreen(); // Вне Telegram доступ всегда запрещен
+                showAccessDeniedScreen();
                 alert("Это приложение предназначено для запуска внутри Telegram.");
                 return;
             }
-
             const tg = Telegram.WebApp;
             tg.ready();
             const applyTheme = () => document.body.classList.toggle('dark', tg.colorScheme === 'dark');
@@ -434,24 +446,23 @@ clearSearchButton.addEventListener('click', () => {
             applyTheme();
             tg.MainButton.setParams({ text: 'Закрыть', color: '#0ea5e9', text_color: '#ffffff', is_visible: true });
             tg.onEvent('mainButtonClicked', () => tg.close());
-            
             if (tg.initData) {
                 const isAllowed = await checkTelegramAccess(tg.initData);
-                if (isAllowed) { 
+                if (isAllowed) {
                     showAppContent();
                     await main();
-                } else { 
-                    showAccessDeniedScreen(); 
+                } else {
+                    showAccessDeniedScreen();
                 }
             } else {
-                showAccessDeniedScreen(); // Если нет initData, доступ запрещен
+                showAccessDeniedScreen();
             }
         } catch (e) {
             console.error("CRITICAL ERROR during initialization:", e);
             showCriticalError(e.message);
         }
     }
-    
+
     initializeApp();
 });
 </script>
