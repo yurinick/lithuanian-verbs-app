@@ -154,7 +154,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 headerHTML += `<th class="${classes}">${h.title}</th>`;
             });
             headerHTML += '</tr>';
-            tableHead.innerHTML = headerHTML;
             if (!append) tableBody.innerHTML = '';
         }
 
@@ -194,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tableBody.children.length === 0) {
             if (!isConjugationIndexReady && currentSearchTerm.trim().length > 0) {
                 loadingAdvancedSearchMessage.classList.remove('hidden');
-            } else {
+            } else if (currentSearchTerm.trim().length > 0) {
                 noResultsMessage.classList.remove('hidden');
             }
         }
@@ -361,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mainColumnsStartsWithSearch = `(infinitive_norm REGEXP :starts_with_regex OR translation_norm REGEXP :starts_with_regex OR present_3rd_norm REGEXP :starts_with_regex OR past_3rd_norm REGEXP :starts_with_regex OR question_norm REGEXP :starts_with_regex)`;
 
                 if (isConjugationIndexReady) {
-                    sql = `\n                        SELECT *,\n                            CASE\n                                WHEN (all_forms_text REGEXP :whole_word_regex AND NOT ${mainColumnsSearch}) THEN 2\n                                WHEN ${mainColumnsStartsWithSearch} THEN 1\n                                ELSE 0\n                            END AS match_quality\n                        FROM verbs\n                        WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :whole_word_regex\n                        ORDER BY match_quality DESC, id_num\n                        LIMIT :limit OFFSET :offset`;
+                    sql = `\n                        SELECT *,\n                            CASE\n                                WHEN all_forms_text REGEXP :whole_word_regex THEN 2\n                                WHEN ${mainColumnsStartsWithSearch} THEN 1\n                                ELSE 0\n                            END AS match_quality\n                        FROM verbs\n                        WHERE ${mainColumnsSearch} OR all_forms_text REGEXP :whole_word_regex\n                        ORDER BY match_quality DESC, id_num\n                        LIMIT :limit OFFSET :offset`;
                     params = {
                         ':regex': searchRegex,
                         ':starts_with_regex': startsWithRegex,
@@ -449,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initializeApp() {
         try {
             // Возвращаем строгую проверку на запуск вне Telegram
-            if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined') {
+            if (typeof Telegram === 'undefined' || typeof Telegram.WebApp === 'undefined' || !Telegram.WebApp.initData) {
                 showAccessDeniedScreen();
                 alert("Это приложение предназначено для запуска внутри Telegram.");
                 return;
