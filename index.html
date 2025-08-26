@@ -109,7 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     const normalizeForSearch = (s) => s ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : "";
     const createSearchRegex = (term) => {
-        let result = term.replace(/[iy]/g, '[iy]');
+        const escapedTerm = term.replace(/\?/g, '\\?');
+        let result = escapedTerm.replace(/[iy]/g, '[iy]');
         result = result.replace(/a[iy]/g, '(ai|ei)').replace(/e[iy]/g, '(ai|ei)');
         return result;
     };
@@ -137,7 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === ФУНКЦИИ РЕНДЕРИНГА ===
     function renderTable(verbs, append = false) {
-        if (!append) {
+        // Создаем заголовок только один раз, если его еще нет
+        if (tableHead.children.length === 0) {
             const headerConfig = [
                 { title: '№', width: 'md:w-[4%]', align: 'text-center' },
                 { title: 'P', width: 'md:w-[4%]', align: 'text-center' },
@@ -154,7 +156,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 headerHTML += `<th class="${classes}">${h.title}</th>`;
             });
             headerHTML += '</tr>';
-            if (!append) tableBody.innerHTML = '';
+            tableHead.innerHTML = headerHTML;
+        }
+
+        // Очищаем тело таблицы только при новом поиске
+        if (!append) {
+            tableBody.innerHTML = '';
         }
 
         verbs.forEach(verb => {
